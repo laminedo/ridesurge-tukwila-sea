@@ -1,0 +1,222 @@
+@import "tailwindcss";
+
+@theme {
+  /* Surfaces, darkest to lightest */
+  --color-plane: #05080c;
+  --color-surface: #0c121b;
+  --color-raised: #131c29;
+  --color-line: #1c2736;
+  --color-line-2: #2a394d;
+
+  /* Ink */
+  --color-fg: #f2f5f9;
+  --color-fg-2: #b4c0cf;
+  --color-fg-3: #7d8ba0;
+
+  /* Interface accent (controls, radar chrome). Never used to encode data. */
+  --color-accent: #35d6c0;
+  --color-accent-ink: #03211d;
+
+  /* Demand drivers: validated as a colour-blind-safe pair on the dark surface. */
+  --color-flights: #3987e5;
+  --color-events: #199e70;
+  --color-baseline: #55657a;
+
+  /* Status: always paired with an icon and a label. */
+  --color-good: #0ca30c;
+  --color-warning: #fab219;
+  --color-critical: #d03b3b;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+html {
+  color-scheme: dark;
+  background: var(--color-plane);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-plane);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+button,
+a,
+input[type="range"] {
+  touch-action: manipulation;
+}
+
+/* ---------- Surge radar ---------- */
+
+.radar-sweep {
+  background: conic-gradient(
+    from 0deg,
+    rgb(53 214 192 / 0) 0deg,
+    rgb(53 214 192 / 0) 285deg,
+    rgb(53 214 192 / 0.2) 359deg,
+    rgb(53 214 192 / 0) 360deg
+  );
+  animation: radar-sweep var(--sweep, 7s) linear infinite;
+}
+
+@keyframes radar-sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A blip echoes as the sweep passes over it. */
+.blip-echo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid var(--echo, currentColor);
+  opacity: 0;
+  pointer-events: none;
+  animation: blip-echo var(--sweep, 7s) linear infinite;
+  animation-delay: var(--echo-delay, 0s);
+}
+
+@keyframes blip-echo {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  16%,
+  100% {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+
+.pulse-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ---------- Forecast time slider ---------- */
+
+.scrubber {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 44px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.scrubber::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--color-accent) var(--fill, 0%),
+    var(--color-line-2) var(--fill, 0%)
+  );
+}
+
+.scrubber::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-line-2);
+}
+
+.scrubber::-moz-range-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-accent);
+}
+
+.scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -10px;
+  border-radius: 9999px;
+  background: var(--color-fg);
+  border: 4px solid var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-surface);
+}
+
+.scrubber::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--color-fg);
+  border: 4px solid var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-surface);
+}
+
+/* ---------- Bottom sheets (native <dialog>) ---------- */
+
+dialog.sheet {
+  position: fixed;
+  inset: auto 0 0 0;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 520px;
+  max-height: 88dvh;
+  padding: 0;
+  overflow: hidden;
+  color: var(--color-fg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-2);
+  border-bottom: 0;
+  border-radius: 20px 20px 0 0;
+}
+
+dialog.sheet[open] {
+  display: flex;
+  flex-direction: column;
+  animation: sheet-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+dialog.sheet::backdrop {
+  background: rgb(2 5 9 / 0.72);
+  backdrop-filter: blur(2px);
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-sweep,
+  .blip-echo::after,
+  .pulse-dot,
+  dialog.sheet[open] {
+    animation: none;
+  }
+
+  .radar-sweep {
+    opacity: 0.6;
+  }
+}
