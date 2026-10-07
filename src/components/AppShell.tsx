@@ -3,7 +3,7 @@
 import { CircleAlert, FlaskConical, History, WifiOff } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { STATIC_EXPORT } from '@/lib/client/env';
-import { setTab, useGeolocation, useNow, useOnline, useSettings, useTab } from '@/lib/client/stores';
+import { setTab, useGeolocation, useNow, useOnline, useSettings, useTab, useWide } from '@/lib/client/stores';
 import { useSnapshot } from '@/lib/client/useSnapshot';
 import { fmtClock, fmtWeekday } from '@/lib/format';
 import { haversineMi } from '@/lib/geo';
@@ -14,8 +14,8 @@ import { buildView, currentStep } from '@/lib/view';
 import { HOME_BASE, ZONES } from '@/lib/zones';
 import { BestMove } from './BestMove';
 import { BottomNav } from './BottomNav';
-import { EventsPanel } from './EventsPanel';
-import { FlightMonitor } from './FlightMonitor';
+import { EventsPanel, EventsSummary } from './EventsPanel';
+import { FlightMonitor, FlightWaveCard, UpcomingWavesCard } from './FlightMonitor';
 import { Header, type Health } from './Header';
 import { HeatGrid } from './HeatGrid';
 import { SettingsSheet } from './SettingsSheet';
@@ -29,9 +29,10 @@ const FRESH_MS = 150_000;
 
 function Skeleton() {
   return (
-    <div className="space-y-3" aria-busy="true" aria-label="Loading forecast">
-      <div className="h-64 animate-pulse rounded-2xl border border-line bg-surface" />
-      <div className="aspect-square animate-pulse rounded-2xl border border-line bg-surface" />
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-busy="true" aria-label="Loading forecast">
+      <div className="h-64 animate-pulse rounded-2xl border border-line bg-surface md:h-[30rem]" />
+      <div className="aspect-square animate-pulse rounded-2xl border border-line bg-surface md:aspect-auto md:h-[30rem]" />
+      <div className="hidden h-[30rem] animate-pulse rounded-2xl border border-line bg-surface xl:block" />
     </div>
   );
 }
@@ -57,6 +58,8 @@ export function AppShell() {
   // The static build computes its forecast on the device, so it never depends on the network.
   const online = useOnline() || STATIC_EXPORT;
   const tab = useTab();
+  // Tablets and computers get every panel on the overview; phones keep one topic per tab.
+  const wide = useWide();
   const settings = useSettings();
   const [simOffset, setSimOffset] = useState(0);
   const [step, setStep] = useState(0);
@@ -92,8 +95,13 @@ export function AppShell() {
       }
     : {};
 
+  const airportDrive = recs.find((r) => r.zone.id === 'SEA')?.driveMin ?? 0;
+
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[520px] flex-col">
+    <div className="min-h-dvh md:flex">
+      <BottomNav tab={tab} onChange={setTab} alerts={alerts} />
+
+      <div className="flex min-h-dvh min-w-0 flex-1 flex-col">
       <Header
         now={now}
         health={health}
@@ -121,9 +129,9 @@ export function AppShell() {
         />
       )}
 
-      <main className="flex-1 px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-3">
+      <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-3 md:px-6 md:pb-8 md:pt-4">
         {expired ? (
-          <Card>
+          <Card className="mx-auto max-w-xl">
             <p className="flex items-center gap-2 text-[15px] font-semibold">
               <CircleAlert className="size-4 text-warning" aria-hidden />
               The saved forecast has run out
@@ -137,7 +145,7 @@ export function AppShell() {
           </Card>
         ) : !snapshot || !view || now === null ? (
           error && !loading ? (
-            <Card>
+            <Card className="mx-auto max-w-xl">
               <p className="flex items-center gap-2 text-[15px] font-semibold">
                 <CircleAlert className="size-4 text-critical" aria-hidden />
                 Could not load the forecast
@@ -175,17 +183,34 @@ export function AppShell() {
               </p>
             )}
             {tab === 'radar' && (
-              <>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <BestMove recs={recs} view={view} now={now} navApp={settings.navApp} onZone={setZoneId} />
                 <SurgeRadar view={view} sel={sel} onSelect={setStep} onZone={setZoneId} hereZoneId={hereZoneId} />
-              </>
+                {wide && (
+                  <>
+                    <HeatGrid
+                      view={view}
+                      recs={recs}
+                      sel={sel}
+                      onSelect={setStep}
+                      onZone={setZoneId}
+                      className="md:col-span-2 xl:col-span-1"
+                    />
+                    <FlightWaveCard feed={snapshot.flights} now={now} className="md:col-span-2" />
+                    <div className="grid content-start gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-1 xl:grid-cols-1">
+                      <UpcomingWavesCard feed={snapshot.flights} now={now} driveMin={airportDrive} navApp={settings.navApp} limit={2} />
+                      <EventsSummary feed={snapshot.events} now={now} onMore={() => setTab('events')} />
+                    </div>
+                  </>
+                )}
+              </div>
             )}
             {tab === 'grid' && <HeatGrid view={view} recs={recs} sel={sel} onSelect={setStep} onZone={setZoneId} />}
             {tab === 'flights' && (
               <FlightMonitor
                 feed={snapshot.flights}
                 now={now}
-                driveMin={recs.find((r) => r.zone.id === 'SEA')?.driveMin ?? 0}
+                driveMin={airportDrive}
                 navApp={settings.navApp}
               />
             )}
@@ -194,8 +219,7 @@ export function AppShell() {
           </div>
         )}
       </main>
-
-      <BottomNav tab={tab} onChange={setTab} alerts={alerts} />
+      </div>
 
       <ZoneSheet
         zoneId={zoneId}

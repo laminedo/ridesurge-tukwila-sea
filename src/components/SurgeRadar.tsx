@@ -164,7 +164,7 @@ export function SurgeRadar({
   hereZoneId: ZoneId;
 }) {
   return (
-    <Card className="p-3">
+    <Card className="flex flex-col p-3">
       <div className="flex items-baseline justify-between px-1">
         <h2 className="text-[15px] font-semibold">Surge radar</h2>
         <p className="text-[13px] tabular-nums text-fg-2" aria-live="polite">
@@ -172,7 +172,7 @@ export function SurgeRadar({
         </p>
       </div>
 
-      <div className="relative mx-auto mt-3 aspect-square w-full max-w-[420px]">
+      <div className="relative mx-auto mt-3 aspect-square w-full max-w-[440px] md:my-auto">
         <div className="absolute inset-0 overflow-hidden rounded-full border border-line-2 bg-[radial-gradient(circle,#0f1a27_0%,#080d14_100%)]">
           <Scope />
           <div className="radar-sweep absolute inset-0 rounded-full" style={{ '--sweep': `${SWEEP_SECONDS}s` } as CSSProperties} aria-hidden />

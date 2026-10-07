@@ -188,6 +188,18 @@ dialog.sheet[open] {
   animation: sheet-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* Tablets and computers: a centred dialog instead of a sheet pinned to the bottom edge. */
+@media (min-width: 768px) {
+  dialog.sheet {
+    inset: 0;
+    margin: auto;
+    max-width: 640px;
+    max-height: min(88dvh, 900px);
+    border-bottom: 1px solid var(--color-line-2);
+    border-radius: 20px;
+  }
+}
+
 dialog.sheet::backdrop {
   background: rgb(2 5 9 / 0.72);
   backdrop-filter: blur(2px);

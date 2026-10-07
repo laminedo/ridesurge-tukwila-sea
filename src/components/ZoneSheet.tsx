@@ -1,5 +1,6 @@
 'use client';
 
+import { useElementWidth } from '@/lib/client/stores';
 import { fmtClock, fmtCount, fmtDuration, fmtMult, fmtRange, fmtShort } from '@/lib/format';
 import { heatColor, heatInk } from '@/lib/heat';
 import type { NavApp } from '@/lib/nav';
@@ -12,10 +13,8 @@ import { CauseIcon } from './BestMove';
 import { Sheet } from './Sheet';
 import { MultBadge, NavLink } from './ui';
 
-const W = 344;
 const H = 196;
 const PAD = { left: 28, right: 6, top: 10, bottom: 46 };
-const BAR = 16;
 const GAP = 2;
 
 const SERIES = [
@@ -37,7 +36,10 @@ function niceCeil(value: number): number {
  * is the multiplier that results.
  */
 function DemandChart({ steps, sel, onSelect }: { steps: ZoneStep[]; sel: number; onSelect: (step: number) => void }) {
+  const [frame, measured] = useElementWidth<HTMLDivElement>();
+  const W = measured || 344;
   const slot = (W - PAD.left - PAD.right) / steps.length;
+  const BAR = Math.min(24, Math.round(slot * 0.56));
   const floor = H - PAD.bottom;
   const max = niceCeil(Math.max(1, ...steps.map((s) => Math.max(s.demand, s.supply))));
   const scale = (floor - PAD.top) / max;
@@ -45,6 +47,7 @@ function DemandChart({ steps, sel, onSelect }: { steps: ZoneStep[]; sel: number;
   const supply = steps.map((s, i) => `${cx(i).toFixed(1)} ${(floor - s.supply * scale).toFixed(1)}`);
 
   return (
+    <div ref={frame}>
     <svg viewBox={`0 0 ${W} ${H}`} className="block w-full select-none" role="group" aria-label="Ride requests by source against driver capacity, per 15 minutes">
       {[0, max / 2, max].map((v) => (
         <g key={v}>
@@ -130,6 +133,7 @@ function DemandChart({ steps, sel, onSelect }: { steps: ZoneStep[]; sel: number;
         />
       ))}
     </svg>
+    </div>
   );
 }
 

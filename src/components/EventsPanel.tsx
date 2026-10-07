@@ -137,6 +137,64 @@ function EventCard({ event, now, navApp }: { event: VenueEvent; now: number; nav
   );
 }
 
+/** Compact list of the next dismissals for the overview. */
+export function EventsSummary({
+  feed,
+  now,
+  onMore,
+  className,
+}: {
+  feed: EventFeed;
+  now: number;
+  onMore: () => void;
+  className?: string;
+}) {
+  const next = feed.events
+    .filter((e) => e.status !== 'cleared')
+    .sort((a, b) => a.egressStart - b.egressStart)
+    .slice(0, 3);
+
+  return (
+    <Card className={cx('p-3', className)}>
+      <div className="flex items-baseline justify-between px-1">
+        <h2 className="text-[15px] font-semibold">Next dismissals</h2>
+        <button type="button" onClick={onMore} className="-my-2 h-9 text-[12px] font-medium text-accent">
+          All events
+        </button>
+      </div>
+      {next.length > 0 ? (
+        <ul className="mt-1 divide-y divide-line px-1">
+          {next.map((event) => {
+            const Icon = KIND_ICON[event.kind];
+            const { label, live } = statusLine(event, now);
+            return (
+              <li key={event.id} className="flex items-center gap-3 py-2.5">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-raised">
+                  <Icon className="size-4 text-events" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-medium">{event.title}</span>
+                  <span className="block truncate text-[12px] text-fg-3">
+                    {event.venue} · {live ? label : `${fmtCount(event.attendance)} people`}
+                  </span>
+                </span>
+                <span className="shrink-0 text-right">
+                  <span className="block text-[15px] font-semibold tabular-nums">
+                    {fmtShort(event.kind === 'cruise' ? event.egressPeak : event.end)}
+                  </span>
+                  <span className="block text-[11px] text-fg-3">{live ? 'letting out' : 'lets out'}</span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="px-1 py-4 text-[13px] text-fg-3">No stadium, arena, theater or cruise dismissals in the next 18 hours.</p>
+      )}
+    </Card>
+  );
+}
+
 export function EventsPanel({ feed, now, navApp }: { feed: EventFeed; now: number; navApp: NavApp }) {
   // What is letting out now first, then the next dismissals in order.
   const events = [...feed.events].sort((a, b) => {
@@ -153,7 +211,11 @@ export function EventsPanel({ feed, now, navApp }: { feed: EventFeed; now: numbe
         </p>
       </div>
       {events.length > 0 ? (
-        events.map((event) => <EventCard key={event.id} event={event} now={now} navApp={navApp} />)
+        <div className="grid items-start gap-3 md:grid-cols-2 2xl:grid-cols-3">
+          {events.map((event) => (
+            <EventCard key={event.id} event={event} now={now} navApp={navApp} />
+          ))}
+        </div>
       ) : (
         <Card>
           <p className="text-[14px] font-medium">Nothing letting out in the next 18 hours</p>

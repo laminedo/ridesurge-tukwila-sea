@@ -5,7 +5,7 @@
  * fixed server value first, so the prerendered shell never depends on the
  * clock, the URL or the device.
  */
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 import type { NavApp } from '../nav';
 import type { LatLng } from '../types';
 
@@ -61,6 +61,40 @@ export const useOnline = () =>
     () => navigator.onLine,
     () => true,
   );
+
+/* ---------- Screen size ---------- */
+
+/** Tablet and up: matches the `md` breakpoint the layout switches on. */
+const WIDE_QUERY = '(min-width: 768px)';
+
+function subscribeWide(listener: Listener) {
+  const query = window.matchMedia(WIDE_QUERY);
+  query.addEventListener('change', listener);
+  return () => query.removeEventListener('change', listener);
+}
+
+/** True on tablets and computers, where the overview shows every panel at once. */
+export const useWide = () =>
+  useSyncExternalStore(
+    subscribeWide,
+    () => window.matchMedia(WIDE_QUERY).matches,
+    () => false,
+  );
+
+/** Live pixel width of an element, so charts can draw at their real size (0 until measured). */
+export function useElementWidth<T extends HTMLElement>(): [RefObject<T | null>, number] {
+  const ref = useRef<T>(null);
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.round(entry.contentRect.width)));
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
+
+  return [ref, width];
+}
 
 /* ---------- Active tab (kept in the URL so home-screen shortcuts deep-link) ---------- */
 

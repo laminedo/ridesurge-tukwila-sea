@@ -7,6 +7,19 @@ import type { StagingSpot, ZoneStep } from '@/lib/types';
 
 export const cx = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(' ');
 
+export function LogoMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" className={cx('size-8 shrink-0', className)} aria-hidden>
+      <rect width="32" height="32" rx="8" fill="var(--color-surface)" stroke="var(--color-line-2)" />
+      <circle cx="16" cy="16" r="10" fill="none" stroke="var(--color-accent)" strokeOpacity="0.35" strokeWidth="1.2" />
+      <circle cx="16" cy="16" r="5.5" fill="none" stroke="var(--color-accent)" strokeOpacity="0.6" strokeWidth="1.2" />
+      <path d="M16 16 L16 6 A10 10 0 0 1 24.66 11 Z" fill="var(--color-accent)" fillOpacity="0.25" />
+      <path d="M16 16 L24.66 11" stroke="var(--color-accent)" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="21" cy="9.5" r="2.4" fill="#f9c22e" />
+    </svg>
+  );
+}
+
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return <section className={cx('rounded-2xl border border-line bg-surface p-4', className)}>{children}</section>;
 }

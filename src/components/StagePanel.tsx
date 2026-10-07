@@ -27,13 +27,14 @@ export function StagePanel({
         <p className="mt-0.5 text-[12px] text-fg-3">One tap to directions. Zones are ordered by the best move from where you are.</p>
       </div>
 
-      <Card className="p-3">
+      <Card className="p-3 md:max-w-md">
         <p className="px-1 text-[12px] text-fg-3">Open directions in</p>
         <div className="mt-2">
           <Segmented label="Navigation app" options={NAV_APPS} value={navApp} onChange={(app) => updateSettings({ navApp: app })} />
         </div>
       </Card>
 
+      <div className="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3">
       {recs.map((rec) => (
         <Card key={rec.zone.id} className="p-3">
           <button type="button" onClick={() => onZone(rec.zone.id)} className="flex w-full items-center gap-3 px-1 text-left">
@@ -76,6 +77,7 @@ export function StagePanel({
           </ul>
         </Card>
       ))}
+      </div>
 
       <p className="px-1 pb-2 text-[11px] leading-relaxed text-fg-3">
         Apart from the airport lots, these are suggested areas rather than designated waiting zones. Follow posted signs and your

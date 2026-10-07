@@ -36,9 +36,11 @@ The service worker only registers in production builds, so test offline behaviou
 
 ## What is on each screen
 
+The layout follows the screen. Phones get one topic per tab with a bottom tab bar. Tablets and computers get a side rail and a full-width dashboard: the Overview shows the best move, radar, heat grid, flight waves and next dismissals together, and the other sections spread into columns.
+
 | Tab | What it answers |
 | --- | --- |
-| **Radar** | The best move right now (zone, peak multiplier, when to leave, one-tap navigation) and a surge radar of all zones. Drag the slider or press play to move through the next three hours. A ring around a blip is the peak coming within the hour. |
+| **Radar** (Overview on wide screens) | The best move right now (zone, peak multiplier, when to leave, one-tap navigation) and a surge radar of all zones. Drag the slider or press play to move through the next three hours. A ring around a blip is the peak coming within the hour. |
 | **Heat grid** | Surge multiplier for 11 zones in 15-minute steps. Tap a cell for demand, driver capacity and what is driving it. |
 | **Flights** | Ride requests by touchdown time against the same riders at the curb 20 to 35 minutes later, upcoming waves with a leave-by time, and the arrivals feeding them. |
 | **Events** | Each venue's estimated dismissal time, its egress curve and where to stage. |

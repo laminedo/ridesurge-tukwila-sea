@@ -49,7 +49,8 @@ export function BestMove({
   if (!top) return null;
 
   const { label, hot } = urgency(top, now);
-  const alternatives = recs.slice(1).filter((r) => r.surge).slice(0, 2);
+  // Two runners-up on a phone; tablets and computers have room for four.
+  const alternatives = recs.slice(1).filter((r) => r.surge).slice(0, 4);
   const headline = top.surge ? top.peakMult : top.nowMult;
 
   return (
@@ -109,8 +110,8 @@ export function BestMove({
 
       {alternatives.length > 0 && (
         <ul className="mt-3 divide-y divide-line border-t border-line">
-          {alternatives.map((alt) => (
-            <li key={alt.zone.id}>
+          {alternatives.map((alt, i) => (
+            <li key={alt.zone.id} className={cx(i >= 2 && 'hidden md:block')}>
               <button
                 type="button"
                 onClick={() => onZone(alt.zone.id)}

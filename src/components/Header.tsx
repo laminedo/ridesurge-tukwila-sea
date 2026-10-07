@@ -1,21 +1,8 @@
 import { FlaskConical, History, RefreshCw, Settings, WifiOff } from 'lucide-react';
 import { fmtClock, fmtDuration, fmtWeekday } from '@/lib/format';
-import { cx } from './ui';
+import { LogoMark, cx } from './ui';
 
 export type Health = 'loading' | 'live' | 'stale' | 'offline';
-
-function LogoMark() {
-  return (
-    <svg viewBox="0 0 32 32" className="size-8 shrink-0" aria-hidden>
-      <rect width="32" height="32" rx="8" fill="var(--color-surface)" stroke="var(--color-line-2)" />
-      <circle cx="16" cy="16" r="10" fill="none" stroke="var(--color-accent)" strokeOpacity="0.35" strokeWidth="1.2" />
-      <circle cx="16" cy="16" r="5.5" fill="none" stroke="var(--color-accent)" strokeOpacity="0.6" strokeWidth="1.2" />
-      <path d="M16 16 L16 6 A10 10 0 0 1 24.66 11 Z" fill="var(--color-accent)" fillOpacity="0.25" />
-      <path d="M16 16 L24.66 11" stroke="var(--color-accent)" strokeWidth="1.6" strokeLinecap="round" />
-      <circle cx="21" cy="9.5" r="2.4" fill="#f9c22e" />
-    </svg>
-  );
-}
 
 function StatusPill({ health, ageMin, simulating }: { health: Health; ageMin: number; simulating: boolean }) {
   const content = {
@@ -58,9 +45,10 @@ export function Header({
   const iconButton = 'flex size-10 items-center justify-center rounded-full text-fg-2 active:bg-raised';
 
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-plane/85 px-4 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-md">
+    <header className="sticky top-0 z-30 border-b border-line bg-plane/85 px-4 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-md md:px-6">
       <div className="flex items-center gap-2.5">
-        <LogoMark />
+        {/* On tablets and computers the mark lives at the top of the side rail. */}
+        <LogoMark className="md:hidden" />
         <div className="min-w-0">
           <h1 className="text-[15px] font-semibold leading-tight tracking-tight">RideSurge</h1>
           <p className="truncate text-[11px] leading-tight text-fg-3">

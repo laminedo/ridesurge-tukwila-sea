@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type PointerEvent } from 'react';
+import { useElementWidth } from '@/lib/client/stores';
 import { fmtCount, fmtDuration, fmtRange, fmtRelative, fmtShort, fmtShortRange } from '@/lib/format';
 import type { NavApp } from '@/lib/nav';
 import { MIN } from '@/lib/time';
@@ -11,8 +12,6 @@ import { Card, Eyebrow, NavLink, Segmented, cx } from './ui';
 
 /* ---------- Chart ---------- */
 
-const W = 344;
-const H = 190;
 const PAD = { left: 28, right: 8, top: 20, bottom: 24 };
 
 function niceCeil(value: number): number {
@@ -29,6 +28,10 @@ function niceCeil(value: number): number {
  */
 function WaveChart({ feed, now }: { feed: FlightFeed; now: number }) {
   const [hover, setHover] = useState<number | null>(null);
+  // Drawn at the card's real pixel width, so type and strokes stay the same size on any screen.
+  const [frame, measured] = useElementWidth<HTMLDivElement>();
+  const W = measured || 344;
+  const H = W >= 640 ? 250 : 190;
   const { buckets } = feed;
   const bucketMs = feed.bucketMin * MIN;
   const slot = (W - PAD.left - PAD.right) / buckets.length;
@@ -53,9 +56,11 @@ function WaveChart({ feed, now }: { feed: FlightFeed; now: number }) {
   };
 
   const shown = hover === null ? null : buckets[hover];
+  // Thin marks: wider screens get more air between bars, not fatter bars.
+  const bar = Math.min(12, slot - 2);
 
   return (
-    <div className="relative">
+    <div ref={frame} className="relative">
       <svg
         viewBox={`0 0 ${W} ${H}`}
         className="block w-full touch-pan-y select-none"
@@ -101,7 +106,7 @@ function WaveChart({ feed, now }: { feed: FlightFeed; now: number }) {
         {buckets.map((b, i) => {
           const top = y(b.landing);
           return b.landing > 0 ? (
-            <rect key={b.t} x={x(i) + 1} y={top} width={slot - 2} height={floor - top} rx={Math.min(2, (floor - top) / 2)} fill="var(--color-baseline)" />
+            <rect key={b.t} x={x(i) + (slot - bar) / 2} y={top} width={bar} height={floor - top} rx={Math.min(bar > 8 ? 4 : 2, (floor - top) / 2)} fill="var(--color-baseline)" />
           ) : null;
         })}
 
@@ -150,7 +155,7 @@ function WaveChart({ feed, now }: { feed: FlightFeed; now: number }) {
       {shown && hover !== null && (
         <div
           className="pointer-events-none absolute top-0 z-10 w-44 -translate-x-1/2 rounded-lg border border-line-2 bg-raised px-2.5 py-2 text-[11px] shadow-lg"
-          style={{ left: `${clamp(((x(hover) + slot / 2) / W) * 100, 27, 73)}%` }}
+          style={{ left: clamp(x(hover) + slot / 2, 92, W - 92) }}
         >
           <p className="font-semibold tabular-nums">{fmtRange(shown.t, shown.t + bucketMs)}</p>
           <p className="mt-1 flex justify-between gap-2 text-fg-2">
@@ -306,6 +311,69 @@ function Arrivals({ flights }: { flights: Flight[] }) {
 
 /* ---------- Tab ---------- */
 
+/** The wave chart with its legend. */
+export function FlightWaveCard({ feed, now, className }: { feed: FlightFeed; now: number; className?: string }) {
+  return (
+    <Card className={cx('p-3', className)}>
+      <div className="px-1">
+        <h2 className="text-[15px] font-semibold">Flight wave monitor</h2>
+        <p className="mt-0.5 text-[12px] text-fg-3">Sea-Tac ride requests per {feed.bucketMin} minutes</p>
+        <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-fg-2">
+          <li className="flex items-center gap-1.5">
+            <span className="size-2.5 rounded-[2px] bg-baseline" aria-hidden />
+            Riders touching down
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="h-0.5 w-3.5 rounded-full bg-flights" aria-hidden />
+            Riders at the curb, {feed.lag.minMin}–{feed.lag.maxMin} min later
+          </li>
+        </ul>
+      </div>
+      <div className="mt-2">
+        <WaveChart feed={feed} now={now} />
+      </div>
+    </Card>
+  );
+}
+
+/** Waves still ahead, each with a leave-by time and a navigation button. */
+export function UpcomingWavesCard({
+  feed,
+  now,
+  driveMin,
+  navApp,
+  limit,
+  className,
+}: {
+  feed: FlightFeed;
+  now: number;
+  driveMin: number;
+  navApp: NavApp;
+  limit?: number;
+  className?: string;
+}) {
+  const waves = limit ? feed.waves.slice(0, limit) : feed.waves;
+  return (
+    <Card className={cx('p-3', className)}>
+      <div className="flex items-baseline justify-between px-1">
+        <h2 className="text-[15px] font-semibold">Upcoming waves</h2>
+        <Eyebrow>Stage 5 min early</Eyebrow>
+      </div>
+      {waves.length > 0 ? (
+        <ul className="mt-1 divide-y divide-line px-1">
+          {waves.map((w) => (
+            <WaveRow key={w.id} wave={w} now={now} driveMin={driveMin} navApp={navApp} />
+          ))}
+        </ul>
+      ) : (
+        <p className="px-1 py-4 text-[13px] text-fg-3">
+          No arrival bank stands out in the next three hours. Demand at the curb is flat; watch the chart for the next build-up.
+        </p>
+      )}
+    </Card>
+  );
+}
+
 export function FlightMonitor({
   feed,
   now,
@@ -324,60 +392,27 @@ export function FlightMonitor({
   const wave = feed.waves[0];
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-2">
-        <Tile label="At curb now" value={`~${Math.round(curbNow)}`} detail="rides / 15 min" />
-        <Tile
-          label="Next wave"
-          value={wave ? (wave.start <= now ? 'Now' : fmtShort(wave.start)) : 'None'}
-          detail={wave ? `~${fmtCount(wave.requests)} rides` : 'in next 3 h'}
-        />
-        <Tile
-          label="Landing in 1 h"
-          value={fmtCount(landingSoon.reduce((s, f) => s + f.pax, 0))}
-          detail={`pax · ${landingSoon.length} flights`}
-        />
+    <div className="grid gap-3 lg:grid-cols-12">
+      <div className="space-y-3 lg:col-span-7">
+        <div className="grid grid-cols-3 gap-2">
+          <Tile label="At curb now" value={`~${Math.round(curbNow)}`} detail="rides / 15 min" />
+          <Tile
+            label="Next wave"
+            value={wave ? (wave.start <= now ? 'Now' : fmtShort(wave.start)) : 'None'}
+            detail={wave ? `~${fmtCount(wave.requests)} rides` : 'in next 3 h'}
+          />
+          <Tile
+            label="Landing in 1 h"
+            value={fmtCount(landingSoon.reduce((s, f) => s + f.pax, 0))}
+            detail={`pax · ${landingSoon.length} flights`}
+          />
+        </div>
+        <FlightWaveCard feed={feed} now={now} />
+        <UpcomingWavesCard feed={feed} now={now} driveMin={driveMin} navApp={navApp} />
       </div>
-
-      <Card className="p-3">
-        <div className="px-1">
-          <h2 className="text-[15px] font-semibold">Flight wave monitor</h2>
-          <p className="mt-0.5 text-[12px] text-fg-3">Sea-Tac ride requests per {feed.bucketMin} minutes</p>
-          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-fg-2">
-            <li className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-[2px] bg-baseline" aria-hidden />
-              Riders touching down
-            </li>
-            <li className="flex items-center gap-1.5">
-              <span className="h-0.5 w-3.5 rounded-full bg-flights" aria-hidden />
-              Riders at the curb, {feed.lag.minMin}–{feed.lag.maxMin} min later
-            </li>
-          </ul>
-        </div>
-        <div className="mt-2">
-          <WaveChart feed={feed} now={now} />
-        </div>
-      </Card>
-
-      <Card className="p-3">
-        <div className="flex items-baseline justify-between px-1">
-          <h2 className="text-[15px] font-semibold">Upcoming waves</h2>
-          <Eyebrow>Stage 5 min early</Eyebrow>
-        </div>
-        {feed.waves.length > 0 ? (
-          <ul className={cx('mt-1 divide-y divide-line px-1')}>
-            {feed.waves.map((w) => (
-              <WaveRow key={w.id} wave={w} now={now} driveMin={driveMin} navApp={navApp} />
-            ))}
-          </ul>
-        ) : (
-          <p className="px-1 py-4 text-[13px] text-fg-3">
-            No arrival bank stands out in the next three hours. Demand at the curb is flat; watch the chart for the next build-up.
-          </p>
-        )}
-      </Card>
-
-      <Arrivals flights={feed.arrivals} />
+      <div className="lg:col-span-5">
+        <Arrivals flights={feed.arrivals} />
+      </div>
     </div>
   );
 }

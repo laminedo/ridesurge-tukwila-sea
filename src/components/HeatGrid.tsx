@@ -34,12 +34,14 @@ export function HeatGrid({
   sel,
   onSelect,
   onZone,
+  className,
 }: {
   view: View;
   recs: Recommendation[];
   sel: number;
   onSelect: (step: number) => void;
   onZone: (zone: ZoneId) => void;
+  className?: string;
 }) {
   const [sort, setSort] = useState<Sort>('hot');
   const [picked, setPicked] = useState<ZoneId | null>(null);
@@ -57,7 +59,8 @@ export function HeatGrid({
   const focus = view.byZone[focusId][sel];
 
   return (
-    <Card className="p-3">
+    // A container, so the layout follows the card's own width wherever it is placed.
+    <Card className={cx('@container p-3', className)}>
       <div className="px-1">
         <h2 className="text-[15px] font-semibold">Zone demand heat grid</h2>
         <p className="mt-0.5 text-[12px] text-fg-3">
@@ -65,10 +68,12 @@ export function HeatGrid({
         </p>
       </div>
 
-      <div className="mt-3">
+      <div className="mt-3 @4xl:max-w-sm">
         <Segmented label="Row order" options={SORTS} value={sort} onChange={setSort} />
       </div>
 
+      <div className="@4xl:flex @4xl:items-start @4xl:gap-4">
+      <div className="min-w-0 flex-1">
       <table className="mt-2 w-full table-fixed border-separate border-spacing-[2px]">
         <caption className="sr-only">Forecast surge multiplier by zone and time</caption>
         <colgroup>
@@ -109,7 +114,7 @@ export function HeatGrid({
                   type="button"
                   onClick={() => onZone(zone.id)}
                   aria-label={`${zone.name}, ${fmtDuration(driveMin)} away. Open details`}
-                  className="flex h-9 w-full flex-col items-start justify-center pl-1 text-left"
+                  className="flex h-9 w-full flex-col items-start justify-center pl-1 text-left @4xl:h-11"
                 >
                   <span className={cx('text-[12px] font-semibold leading-none', zone.id === focusId ? 'text-accent' : 'text-fg')}>
                     {zone.code}
@@ -130,7 +135,7 @@ export function HeatGrid({
                       aria-label={`${zone.name}, ${i === 0 ? 'now' : fmtClock(s.t)}: ${fmtMult(s.mult)}`}
                       aria-pressed={active}
                       className={cx(
-                        'flex h-9 w-full items-center justify-center rounded-[4px] text-[10px] font-semibold tabular-nums',
+                        'flex h-9 w-full items-center justify-center rounded-[4px] text-[10px] font-semibold tabular-nums @2xl:text-[12px] @4xl:h-11',
                         active && 'relative z-10 outline outline-2 outline-fg',
                       )}
                       style={{ background: heatColor(s.mult), color: heatInk(s.mult) }}
@@ -146,8 +151,9 @@ export function HeatGrid({
       </table>
 
       <HeatLegend className="mt-3 px-1" />
+      </div>
 
-      <div className="mt-3 rounded-xl border border-line bg-raised p-3" aria-live="polite">
+      <div className="mt-3 rounded-xl border border-line bg-raised p-3 @4xl:mt-2 @4xl:w-80 @4xl:shrink-0" aria-live="polite">
         <div className="flex items-center gap-3">
           <MultBadge mult={focus.mult} className="h-10 w-14 text-[17px]" />
           <div className="min-w-0 flex-1">
@@ -180,6 +186,7 @@ export function HeatGrid({
           <Driver swatch="bg-flights" label="Flights" value={focus.flights} />
           <Driver swatch="bg-events" label="Events" value={focus.events} />
         </dl>
+      </div>
       </div>
     </Card>
   );
