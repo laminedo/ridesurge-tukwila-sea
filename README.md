@@ -70,6 +70,10 @@ The layout follows the screen. Phones get one topic per tab with a bottom tab ba
 
 Settings holds the navigation app, whether drive times start from the Tukwila base or your location (kept on the device), and a simulation clock for rehearsing moments such as Friday at 10:30 PM or Saturday bar close.
 
+## Refreshing
+
+Pull the page down from the top on a phone or tablet, or press the refresh button in the header on any device. A chip drops in, spins while the forecast and the weather reload, and confirms with a tick as the fresh numbers settle into place. A refresh also checks whether a newer version of the app has been published and, if so, reloads into it, so there is no need to close and reopen the app after an update. The gesture lives in `src/components/RefreshIndicator.tsx`.
+
 ## The radar map
 
 The radar is a real street map (OpenFreeMap, drawn from OpenStreetMap data) centred on the driver.

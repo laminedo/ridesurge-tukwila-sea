@@ -40,7 +40,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+    // The build id lets a running copy of the app notice that a newer one has been published.
+    <html lang="en" data-build={process.env.NEXT_PUBLIC_BUILD_ID} className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
       <body>
         {children}
         <ServiceWorker />

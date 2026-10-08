@@ -107,6 +107,18 @@ input[type="range"] {
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
+/* The tick that confirms a refresh. */
+.refresh-pop {
+  animation: refresh-pop 0.35s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes refresh-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.3) rotate(-30deg);
+  }
+}
+
 /* The driver's own position on the map. */
 .you-pulse {
   animation: you-pulse 2.2s ease-out infinite;
@@ -253,6 +265,7 @@ dialog.sheet::backdrop {
   .blip-echo::after,
   .pulse-dot,
   .you-pulse,
+  .refresh-pop,
   dialog.sheet[open] {
     animation: none;
   }

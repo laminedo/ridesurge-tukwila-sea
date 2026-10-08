@@ -1,9 +1,10 @@
 'use client';
 
 import { CircleAlert, FlaskConical, History, LocateFixed, MapPinOff, WifiOff } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { STATIC_EXPORT } from '@/lib/client/env';
 import { setTab, useGeolocation, useNow, useOnline, useSettings, useTab, useWide } from '@/lib/client/stores';
+import { newVersionAvailable } from '@/lib/client/update';
 import { useSnapshot } from '@/lib/client/useSnapshot';
 import { useWeather } from '@/lib/client/useWeather';
 import { fmtClock, fmtWeekday } from '@/lib/format';
@@ -20,6 +21,7 @@ import { BottomNav } from './BottomNav';
 import { EventsPanel, EventsSummary } from './EventsPanel';
 import { AirportRunsCard, FlightMonitor, FlightWaveCard, UpcomingWavesCard } from './FlightMonitor';
 import { Header, type Health } from './Header';
+import { RefreshIndicator, type RefreshPhase } from './RefreshIndicator';
 import { RegionProvider } from './RegionContext';
 import { HeatGrid } from './HeatGrid';
 import { SettingsSheet } from './SettingsSheet';
@@ -31,6 +33,10 @@ import { Card } from './ui';
 
 /** Data older than this is no longer called live. */
 const FRESH_MS = 150_000;
+/** A refresh always shows for at least this long, so a fast one is still seen to happen. */
+const MIN_REFRESH_MS = 900;
+/** How long the "Updated" confirmation stays up. */
+const CONFIRM_MS = 1500;
 
 function Skeleton() {
   return (
@@ -108,7 +114,7 @@ export function AppShell() {
     () => (weatherLat !== undefined && weatherLng !== undefined ? { lat: weatherLat, lng: weatherLng } : null),
     [weatherLat, weatherLng],
   );
-  const { weather, error: weatherError } = useWeather(weatherCentre);
+  const { weather, error: weatherError, loading: weatherLoading, refresh: refreshWeather } = useWeather(weatherCentre);
   // What to call that spot: the zone the driver is in, the chosen city, or the area's base.
   const weatherPlace = useMemo(() => {
     if (!region) return '';
@@ -143,6 +149,49 @@ export function AppShell() {
       }
     : {};
 
+  /* ---------- Refresh: the header button and pull-down gesture ---------- */
+
+  const [phase, setPhase] = useState<RefreshPhase>('idle');
+  const refreshStarted = useRef(0);
+  const main = useRef<HTMLElement>(null);
+
+  const refreshAll = useCallback(() => {
+    if (phase !== 'idle') return;
+    refreshStarted.current = Date.now();
+    setPhase('busy');
+    refresh();
+    refreshWeather();
+    // A refresh is also the moment to pick up a newer version of the app itself.
+    void newVersionAvailable().then((newer) => {
+      if (!newer) return;
+      setPhase('updating');
+      setTimeout(() => window.location.reload(), 800);
+    });
+  }, [phase, refresh, refreshWeather]);
+
+  useEffect(() => {
+    if (phase !== 'busy' || loading || weatherLoading) return;
+    const wait = Math.max(0, MIN_REFRESH_MS - (Date.now() - refreshStarted.current));
+    const timer = setTimeout(() => setPhase(error ? 'failed' : 'done'), wait);
+    return () => clearTimeout(timer);
+  }, [phase, loading, weatherLoading, error]);
+
+  useEffect(() => {
+    if (phase !== 'done' && phase !== 'failed') return;
+    // The fresh numbers settle into place, unless the driver has asked for less motion.
+    if (phase === 'done' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      main.current?.animate(
+        [
+          { opacity: 0.35, transform: 'translateY(10px)' },
+          { opacity: 1, transform: 'none' },
+        ],
+        { duration: 420, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+      );
+    }
+    const timer = setTimeout(() => setPhase('idle'), CONFIRM_MS);
+    return () => clearTimeout(timer);
+  }, [phase]);
+
   const airportDrive = recs.find((r) => r.zone.id === region?.airport?.zoneId)?.driveMin ?? 0;
   const openSettings = () => setSettingsOpen(true);
 
@@ -166,8 +215,8 @@ export function AppShell() {
         health={health}
         ageMin={ageMs / MIN}
         simulating={simOffset !== 0}
-        refreshing={loading}
-        onRefresh={refresh}
+        refreshing={loading || phase === 'busy'}
+        onRefresh={refreshAll}
         onSettings={openSettings}
         onArea={openSettings}
       />
@@ -211,7 +260,7 @@ export function AppShell() {
         />
       )}
 
-      <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-3 md:px-6 md:pb-8 md:pt-4">
+      <main ref={main} className="mx-auto w-full max-w-[1600px] flex-1 px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-3 md:px-6 md:pb-8 md:pt-4">
         {expired ? (
           <Card className="mx-auto max-w-xl">
             <p className="flex items-center gap-2 text-[15px] font-semibold">
@@ -363,6 +412,8 @@ export function AppShell() {
         )}
       </main>
       </div>
+
+      <RefreshIndicator phase={phase} onRefresh={refreshAll} />
 
       <SettingsSheet
         open={settingsOpen}
