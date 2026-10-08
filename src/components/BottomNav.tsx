@@ -1,4 +1,4 @@
-import { Grid3x3, Navigation, PlaneLanding, Radar, Siren, Ticket, type LucideIcon } from 'lucide-react';
+import { CloudSun, Grid3x3, Navigation, PlaneLanding, Radar, Ticket, type LucideIcon } from 'lucide-react';
 import type { Tab } from '@/lib/client/stores';
 import { LogoMark, cx } from './ui';
 
@@ -8,7 +8,7 @@ const ITEMS: { tab: Tab; label: string; wideLabel: string; Icon: LucideIcon }[] 
   { tab: 'flights', label: 'Flights', wideLabel: 'Flights', Icon: PlaneLanding },
   { tab: 'events', label: 'Events', wideLabel: 'Events', Icon: Ticket },
   { tab: 'stage', label: 'Stage', wideLabel: 'Stage', Icon: Navigation },
-  { tab: 'police', label: 'Police', wideLabel: 'Police', Icon: Siren },
+  { tab: 'weather', label: 'Weather', wideLabel: 'Weather', Icon: CloudSun },
 ];
 
 /** Section navigation: a bottom tab bar on phones, a side rail on tablets and computers. */
@@ -19,7 +19,7 @@ export function BottomNav({
 }: {
   tab: Tab;
   onChange: (tab: Tab) => void;
-  /** Tabs with something happening right now (a wave at the curb, a venue letting out). */
+  /** Tabs with something happening right now (a wave at the curb, a venue letting out, rain on the way). */
   alerts: Partial<Record<Tab, boolean>>;
 }) {
   return (

@@ -49,7 +49,7 @@ Outside Seattle the market is generated on the device from data bundled with the
 - **Venues** are the NFL, MLB, NBA, NHL and MLS stadiums and arenas, with home games in season and touring shows, plus a generic bar district and convention centre for larger cities.
 - **Times** are shown in the area's own time zone.
 
-Building your area never sends your location anywhere: nothing is looked up online, and the HTTP API only serves the Seattle market. (Reporting on the police radar is the one exception.) A generated market is coarser than Seattle's. Staging spots are town centres and the venues themselves, and local clubs, theatres and college venues are not included.
+Building your area never sends your location anywhere: nothing is looked up online, and the HTTP API only serves the Seattle market. (The weather lookup sends a rounded area centre to Open-Meteo.) A generated market is coarser than Seattle's. Staging spots are town centres and the venues themselves, and local clubs, theatres and college venues are not included.
 
 ## What is on each screen
 
@@ -62,7 +62,7 @@ The layout follows the screen. Phones get one topic per tab with a bottom tab ba
 | **Flights** | Ride requests by touchdown time against the same riders at the curb 20 to 35 minutes later, upcoming waves with a leave-by time, and the arrivals feeding them. **Rides to the airport** shows how many riders are leaving home for Sea-Tac and which neighbourhoods they start in. |
 | **Events** | Each venue's estimated dismissal time, its egress curve and where to stage. Filter to clubs and late night for closing-time rushes at the nightclubs, live-music rooms and showgirls clubs. |
 | **Stage** | Quick-launch navigation to staging spots, ordered by the best opportunity from where you are. Switch to **Hotels** for the larger hotels ranked by expected pickups this hour, plus a map search for every hotel in a zone. Opens Google Maps, Waze or Apple Maps. |
-| **Police** | A second radar of police sightings reported by RideSurge drivers within 5, 10 or 25 miles, with one tap to report and a button to open Waze. See [Police radar](#police-radar). |
+| **Weather** | Live forecast for your area and what it means for driving. See [Weather](#weather). |
 
 Settings holds the navigation app, whether drive times start from the Tukwila base or your location (kept on the device), and a simulation clock for rehearsing moments such as Friday at 10:30 PM or Saturday bar close.
 
@@ -70,16 +70,11 @@ Settings holds the navigation app, whether drive times start from the Tukwila ba
 
 Every zone is coloured on one ramp: cool blue is low, through violet and red, to bright yellow for the highest. The **Surge / Demand** switch on the radar and heat grid chooses what the colour means: the price multiplier, or how busy a zone is compared with the busiest one. Each mark also carries its number and a Low, Medium, High or Very high level, so nothing depends on colour alone.
 
-## Police radar
+## Weather
 
-There is no public feed of where police cars are, so this works the way Waze does: drivers report what they see.
+The **Weather** tab shows the live forecast for your area from [Open-Meteo](https://open-meteo.com/): conditions now, the next 24 hours hour by hour, the coming days, and what it means for driving (rain about to start, snow, ice, strong wind, fog, heat). A marker appears on the tab when the next few hours call for a change of plan.
 
-- **Report police here** sends the driver's current position, rounded to about 100 metres, to a small Supabase database. A sighting within about 300 metres of an active report confirms it instead of adding another.
-- Reports are anonymous and disappear 45 minutes after they were last seen.
-- Viewing sends only a rough area (a half-degree box), never a position.
-- The schema is in `supabase/migrations`. Row-level security allows anonymous reads of active reports only; writes go through the `report_police` function, which validates and rate-limits. The key in `src/lib/police.ts` is a publishable key and is safe to ship; override it with `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_KEY` to use your own project.
-
-It only knows what RideSurge drivers report, so it stays quiet until enough of them use it. An empty radar means nobody has reported, not that the road is clear. This is the one part of the app that is real data rather than simulated, and the one case where a location leaves the device.
+This is the one feed in the app that is real rather than simulated. It is shown as information only: the simulated surge numbers do not take weather into account. To fetch it, the app sends the centre of your area, rounded to about three miles, to Open-Meteo; nothing else leaves the device.
 
 ## How it works
 

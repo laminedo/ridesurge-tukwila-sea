@@ -4,7 +4,6 @@ import { CONTEXT_STEPS, HORIZON_STEPS, emulateTimesFM, runForecast, type SeriesI
 import { driveMinutes } from './geo';
 import { demandHeat, demandLevel, heatColor, surgeLevel } from './heat';
 import { hotelPickups } from './hotels';
-import { bearingDeg, compassPoint, radarPosition } from './police';
 import { rankZones } from './recommend';
 import { SEATTLE, resolveRegion } from './regions';
 import { LEAD_MAX, LEAD_MIN, airportRunTotals, buildAirportRunFeed, originShare } from './sim/departures';
@@ -12,6 +11,7 @@ import { eventsForDay } from './sim/events';
 import { LAG_MAX, LAG_MIN, buildFlightFeed, flightsForDay, lagCdf, spreadCurb } from './sim/flights';
 import { buildSnapshot, resolveAt } from './snapshot';
 import { DAY, HOUR, MIN, localClock, pacificOffsetMs, zoneOffsetMs } from './time';
+import { driverAdvice, parseWeather, skyOf } from './weather';
 import { HOME_BASE, STAGING_SPOTS, ZONES, defaultSpot } from './zones';
 
 // Friday 10:30 PM Pacific: late arrival banks, shows letting out, nightlife.
@@ -456,23 +456,67 @@ describe('hotels', () => {
   });
 });
 
-describe('police radar geometry', () => {
-  const tukwila = { lat: 47.459, lng: -122.2585 };
+describe('weather', () => {
+  const NOW = Date.parse('2026-10-08T19:00:00Z');
+  const hoursOf = (codes: number[], chances: number[], temps: number[] = [], gusts: number[] = []) => {
+    const n = codes.length;
+    return {
+      current: { time: NOW / 1000, temperature_2m: temps[0] ?? 55, apparent_temperature: 54, precipitation: 0, weather_code: codes[0], wind_speed_10m: 5, wind_gusts_10m: gusts[0] ?? 8, relative_humidity_2m: 70, is_day: 1 },
+      hourly: {
+        time: Array.from({ length: n }, (_, i) => NOW / 1000 + i * 3600),
+        temperature_2m: Array.from({ length: n }, (_, i) => temps[i] ?? 55),
+        precipitation_probability: chances,
+        precipitation: chances.map((c) => (c >= 60 ? 0.05 : 0)),
+        weather_code: codes,
+        wind_gusts_10m: Array.from({ length: n }, (_, i) => gusts[i] ?? 8),
+        is_day: Array.from({ length: n }, () => 1),
+      },
+      daily: { time: [NOW / 1000], weather_code: [codes[0]], temperature_2m_max: [60], temperature_2m_min: [48], precipitation_probability_max: [Math.max(...chances)], precipitation_sum: [0] },
+    };
+  };
+  const dry = Array.from({ length: 14 }, () => 5);
 
-  it('finds the compass direction of a report', () => {
-    expect(compassPoint(bearingDeg(tukwila, { lat: 47.6, lng: -122.2585 }))).toBe('N');
-    expect(compassPoint(bearingDeg(tukwila, { lat: 47.459, lng: -122.0 }))).toBe('E');
-    expect(compassPoint(bearingDeg(tukwila, { lat: 47.3, lng: -122.45 }))).toBe('SW');
+  it('groups weather codes into conditions a driver cares about', () => {
+    expect(skyOf(0)).toBe('clear');
+    expect(skyOf(45)).toBe('fog');
+    expect(skyOf(63)).toBe('rain');
+    expect(skyOf(66)).toBe('freezing');
+    expect(skyOf(73)).toBe('snow');
+    expect(skyOf(95)).toBe('thunder');
   });
 
-  it('places reports by bearing and distance and drops those out of range', () => {
-    const north = radarPosition(tukwila, { lat: 47.5, lng: -122.2585 }, 10);
-    expect(north).not.toBeNull();
-    expect(north!.x).toBeCloseTo(50, 0);
-    expect(north!.y).toBeLessThan(50);
-    expect(north!.miles).toBeGreaterThan(2.5);
-    expect(north!.miles).toBeLessThan(3.2);
-    expect(radarPosition(tukwila, { lat: 48.5, lng: -122.2585 }, 10)).toBeNull();
-    expect(radarPosition(tukwila, tukwila, 10)).toMatchObject({ x: 50, y: 50 });
+  it('reads the service response into hours from now', () => {
+    const weather = parseWeather(hoursOf(Array.from({ length: 14 }, () => 2), dry), NOW);
+    expect(weather.hours).toHaveLength(14);
+    expect(weather.hours[0].t).toBe(NOW);
+    expect(weather.current.sky).toBe('partly');
+    expect(weather.days[0].highF).toBe(60);
+  });
+
+  it('says nothing is expected in settled weather', () => {
+    const advice = driverAdvice(parseWeather(hoursOf(Array.from({ length: 14 }, () => 1), dry), NOW));
+    expect(advice).toHaveLength(1);
+    expect(advice[0]).toMatchObject({ kind: 'calm', alert: false });
+  });
+
+  it('flags rain that is about to start, and rain already falling', () => {
+    const codes = [2, 2, 61, 61, 61, 3, 3, 3, 3, 3, 3, 3, 3, 3];
+    const chances = [10, 20, 80, 85, 70, 20, 10, 5, 5, 5, 5, 5, 5, 5];
+    const soon = driverAdvice(parseWeather(hoursOf(codes, chances), NOW));
+    expect(soon[0]).toMatchObject({ kind: 'rain', alert: true });
+    expect(soon[0].title).toContain('80%');
+
+    const falling = driverAdvice(parseWeather(hoursOf(codes.slice(2), chances.slice(2)), NOW));
+    expect(falling[0].kind).toBe('rain');
+    expect(falling[0].title).toMatch(/^Wet now/);
+  });
+
+  it('puts snow and ice ahead of everything else, and notices wind', () => {
+    const codes = [3, 3, 73, 73, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3];
+    const chances = [10, 20, 70, 70, 20, 5, 5, 5, 5, 5, 5, 5, 5, 5];
+    const gusts = [10, 12, 38, 42, 30, 10, 10, 10, 10, 10, 10, 10, 10, 10];
+    const advice = driverAdvice(parseWeather(hoursOf(codes, chances, [], gusts), NOW));
+    expect(advice[0].kind).toBe('snow');
+    expect(advice.some((a) => a.kind === 'wind' && a.title.includes('42'))).toBe(true);
   });
 });

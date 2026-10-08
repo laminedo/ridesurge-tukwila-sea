@@ -160,7 +160,7 @@ export function SettingsSheet({
                   : geolocation.anchor
                     ? `Scanning around your location${region ? `: ${region.name}` : ''}.`
                     : 'Waiting for your location. Your browser may ask for permission.'}{' '}
-                <span className="text-fg-3">Your location stays on this device, except when you report on the police radar.</span>
+                <span className="text-fg-3">Your location stays on this device. Only the weather lookup sends anything: your area, rounded to about three miles.</span>
               </span>
             </p>
           )}
@@ -223,10 +223,10 @@ export function SettingsSheet({
               </dd>
             </div>
             <div>
-              <dt className="font-medium text-fg-2">Police radar</dt>
+              <dt className="font-medium text-fg-2">Weather</dt>
               <dd className="text-fg-3">
-                Real reports from RideSurge drivers, not simulated. Reporting sends the spot, rounded to about 100 metres, to a shared
-                database; reports fade after 45 minutes.
+                Live forecast from Open-Meteo, not simulated. The app sends the centre of your area, rounded to about three miles, to
+                get it.
               </dd>
             </div>
             <div>

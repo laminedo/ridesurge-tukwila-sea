@@ -98,7 +98,7 @@ export function useElementWidth<T extends HTMLElement>(): [RefObject<T | null>, 
 
 /* ---------- Active tab (kept in the URL so home-screen shortcuts deep-link) ---------- */
 
-export const TABS = ['radar', 'grid', 'flights', 'events', 'stage', 'police'] as const;
+export const TABS = ['radar', 'grid', 'flights', 'events', 'stage', 'weather'] as const;
 export type Tab = (typeof TABS)[number];
 
 const TAB_EVENT = 'ridesurge:tab';

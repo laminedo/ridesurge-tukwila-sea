@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { STATIC_EXPORT } from '@/lib/client/env';
 import { setTab, useGeolocation, useNow, useOnline, useSettings, useTab, useWide } from '@/lib/client/stores';
 import { useSnapshot } from '@/lib/client/useSnapshot';
+import { useWeather } from '@/lib/client/useWeather';
 import { fmtClock, fmtWeekday } from '@/lib/format';
 import { haversineMi } from '@/lib/geo';
 import type { Metric } from '@/lib/heat';
@@ -13,6 +14,7 @@ import type { AreaSpec } from '@/lib/regions';
 import { MIN } from '@/lib/time';
 import type { LatLng, ZoneId } from '@/lib/types';
 import { buildView, currentStep } from '@/lib/view';
+import { driverAdvice } from '@/lib/weather';
 import { BestMove } from './BestMove';
 import { BottomNav } from './BottomNav';
 import { EventsPanel, EventsSummary } from './EventsPanel';
@@ -21,9 +23,9 @@ import { Header, type Health } from './Header';
 import { RegionProvider } from './RegionContext';
 import { HeatGrid } from './HeatGrid';
 import { SettingsSheet } from './SettingsSheet';
-import { PoliceRadar } from './PoliceRadar';
 import { StagePanel } from './StagePanel';
 import { SurgeRadar } from './SurgeRadar';
+import { WeatherCard, WeatherPanel } from './WeatherPanel';
 import { ZoneSheet } from './ZoneSheet';
 import { Card } from './ui';
 
@@ -84,6 +86,14 @@ export function AppShell() {
 
   const { snapshot, error, loading, refresh } = useSnapshot(simOffset, spec);
   const region = snapshot?.region;
+  // Live weather for the area's centre. A rounded area is all the service is given.
+  const homeLat = region?.home.lat;
+  const homeLng = region?.home.lng;
+  const weatherCentre = useMemo(
+    () => (homeLat !== undefined && homeLng !== undefined ? { lat: homeLat, lng: homeLng } : null),
+    [homeLat, homeLng],
+  );
+  const { weather, error: weatherError } = useWeather(weatherCentre);
   const now = realNow === null ? null : realNow + simOffset;
 
   // Drive times start from the driver when we know where they are, else from the area's base.
@@ -116,6 +126,7 @@ export function AppShell() {
     ? {
         flights: snapshot.flights.waves.some((w) => w.start <= now + 15 * MIN && w.end > now),
         events: snapshot.events.events.some((e) => e.egressStart <= now && e.egressEnd > now),
+        weather: weather ? driverAdvice(weather).some((a) => a.alert) : false,
       }
     : {};
 
@@ -226,6 +237,8 @@ export function AppShell() {
             )}
             {tab === 'radar' && (
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {/* Live weather first: one line that says whether the sky will change the plan. */}
+                {weather && <WeatherCard weather={weather} onOpen={() => setTab('weather')} className="md:col-span-2 xl:col-span-3" />}
                 <BestMove recs={recs} view={view} now={now} navApp={settings.navApp} onZone={setZoneId} />
                 <SurgeRadar view={view} sel={sel} onSelect={setStep} onZone={setZoneId} hereZoneId={hereZoneId} metric={metric} onMetric={setMetric} />
                 {wide && (
@@ -276,7 +289,15 @@ export function AppShell() {
             )}
             {tab === 'events' && <EventsPanel feed={snapshot.events} now={now} navApp={settings.navApp} />}
             {tab === 'stage' && <StagePanel recs={recs} view={view} now={now} navApp={settings.navApp} onZone={setZoneId} />}
-            {tab === 'police' && origin && <PoliceRadar origin={origin} usingGps={Boolean(live)} now={realNow ?? now} />}
+            {tab === 'weather' && (
+              <WeatherPanel
+                weather={weather}
+                error={weatherError}
+                now={realNow ?? now}
+                area={snapshot.region.home.label}
+                simulating={simOffset !== 0}
+              />
+            )}
           </div>
           <ZoneSheet
             zoneId={zoneId}
