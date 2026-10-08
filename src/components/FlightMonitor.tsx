@@ -9,7 +9,7 @@ import { MIN } from '@/lib/time';
 import type { Recommendation } from '@/lib/recommend';
 import type { AirportRunFeed, Flight, FlightFeed, FlightWave, ZoneId } from '@/lib/types';
 import { clamp } from '@/lib/util';
-import { ZONE_BY_ID, defaultSpot } from '@/lib/zones';
+import { useRegion } from './RegionContext';
 import { Card, Eyebrow, MultBadge, NavLink, Segmented, cx } from './ui';
 
 /* ---------- Chart ---------- */
@@ -199,6 +199,7 @@ function WaveRow({ wave, now, driveMin, navApp }: { wave: FlightWave; now: numbe
   const underway = wave.start <= now;
   const leaveIn = (wave.start - 5 * MIN - driveMin * MIN - now) / MIN;
   const catchable = now + driveMin * MIN < wave.end - 5 * MIN;
+  const { airportSpot } = useRegion();
   const advice = !catchable ? 'Ends before you could get there' : underway || leaveIn <= 1 ? 'Head to the lot now' : `Leave in ${fmtDuration(leaveIn)}`;
   return (
     <li className="flex items-center gap-3 py-3">
@@ -217,7 +218,7 @@ function WaveRow({ wave, now, driveMin, navApp }: { wave: FlightWave; now: numbe
           {advice} · {fmtDuration(driveMin)} drive
         </p>
       </div>
-      <NavLink spot={defaultSpot('SEA')} app={navApp} variant="icon" />
+      {airportSpot && <NavLink spot={airportSpot} app={navApp} variant="icon" />}
     </li>
   );
 }
@@ -315,11 +316,12 @@ function Arrivals({ flights }: { flights: Flight[] }) {
 
 /** The wave chart with its legend. */
 export function FlightWaveCard({ feed, now, className }: { feed: FlightFeed; now: number; className?: string }) {
+  const { info } = useRegion();
   return (
     <Card className={cx('p-3', className)}>
       <div className="px-1">
         <h2 className="text-[15px] font-semibold">Flight wave monitor</h2>
-        <p className="mt-0.5 text-[12px] text-fg-3">Sea-Tac ride requests per {feed.bucketMin} minutes</p>
+        <p className="mt-0.5 text-[12px] text-fg-3">{info.airport?.code ?? 'Airport'} ride requests per {feed.bucketMin} minutes</p>
         <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-fg-2">
           <li className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-[2px] bg-baseline" aria-hidden />
@@ -435,6 +437,7 @@ export function AirportRunsCard({
   limit?: number;
   className?: string;
 }) {
+  const { zoneById } = useRegion();
   const nextHour = feed.total.slice(0, 4).reduce((s, v) => s + v, 0);
   const rec = new Map(recs.map((r) => [r.zone.id, r]));
   const origins = feed.zones
@@ -474,7 +477,7 @@ export function AirportRunsCard({
                   <button type="button" onClick={() => onZone(zoneId)} className="flex h-13 w-full items-center gap-3 text-left">
                     <span className="w-9 shrink-0 text-right text-[17px] font-semibold tabular-nums">{Math.round(rides)}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px] font-medium">{ZONE_BY_ID[zoneId].name}</span>
+                      <span className="block truncate text-[14px] font-medium">{zoneById[zoneId]?.name}</span>
                       <span className="block truncate text-[12px] text-fg-3">
                         rides next hour{r ? ` · ${fmtDuration(r.driveMin)} away` : ''}
                       </span>
@@ -514,10 +517,23 @@ export function FlightMonitor({
   navApp: NavApp;
   onZone: (zone: ZoneId) => void;
 }) {
+  const { info } = useRegion();
   const bucketMs = feed.bucketMin * MIN;
   const curbNow = feed.buckets.filter((b) => b.t + bucketMs > now && b.t < now + 15 * MIN).reduce((s, b) => s + b.curb, 0);
   const landingSoon = feed.arrivals.filter((f) => f.touchdown >= now && f.touchdown < now + 60 * MIN);
   const wave = feed.waves[0];
+
+  if (!info.airport) {
+    return (
+      <Card>
+        <p className="text-[15px] font-semibold">No commercial airport in reach</p>
+        <p className="mt-1.5 text-[13px] leading-snug text-fg-3">
+          There is no airport with scheduled passenger flights within about 50 miles of {info.home.label}, so there are no flight waves or
+          airport runs to plan around here. The radar, heat grid and events still cover your area.
+        </p>
+      </Card>
+    );
+  }
 
   return (
     <div className="grid gap-3 lg:grid-cols-12">

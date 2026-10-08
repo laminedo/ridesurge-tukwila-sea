@@ -16,10 +16,10 @@ const geistMono = Geist_Mono({
 });
 
 const description =
-  "Flight waves, venue dismissals and a surge forecast for rideshare drivers based in Tukwila and working Sea-Tac and Seattle.";
+  "Flight waves, rides to the airport, venue dismissals and a surge forecast for rideshare drivers, built around wherever you drive.";
 
 export const metadata: Metadata = {
-  title: "RideSurge Tukwila/SEA",
+  title: "RideSurge",
   description,
   applicationName: "RideSurge",
   appleWebApp: {

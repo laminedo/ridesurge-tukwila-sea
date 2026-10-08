@@ -6,7 +6,7 @@ import { heatColor, heatInk } from '@/lib/heat';
 import type { Recommendation } from '@/lib/recommend';
 import type { ZoneId } from '@/lib/types';
 import type { View } from '@/lib/view';
-import { ZONES, ZONE_BY_ID } from '@/lib/zones';
+import { useRegion } from './RegionContext';
 import { Card, HeatLegend, MultBadge, Segmented, cx } from './ui';
 
 type Sort = 'hot' | 'near';
@@ -48,6 +48,8 @@ export function HeatGrid({
   onMore?: () => void;
   className?: string;
 }) {
+  const { info, zoneById } = useRegion();
+  const zones = info.zones;
   const [sort, setSort] = useState<Sort>('hot');
   const [picked, setPicked] = useState<ZoneId | null>(null);
 
@@ -55,11 +57,11 @@ export function HeatGrid({
     const drive = new Map(recs.map((r) => [r.zone.id, r.driveMin]));
     const peak = (id: ZoneId) => view.byZone[id].reduce((max, s) => Math.max(max, s.mult), 1);
     const nearer = (a: ZoneId, b: ZoneId) => (drive.get(a) ?? 0) - (drive.get(b) ?? 0);
-    const sorted = ZONES.map((zone) => ({ zone, driveMin: drive.get(zone.id) ?? 0 })).sort((a, b) =>
+    const sorted = zones.map((zone) => ({ zone, driveMin: drive.get(zone.id) ?? 0 })).sort((a, b) =>
       sort === 'hot' ? peak(b.zone.id) - peak(a.zone.id) || nearer(a.zone.id, b.zone.id) : nearer(a.zone.id, b.zone.id),
     );
     return limit ? sorted.slice(0, limit) : sorted;
-  }, [view, recs, sort, limit]);
+  }, [view, recs, sort, limit, zones]);
 
   const focusId = picked && rows.some((r) => r.zone.id === picked) ? picked : rows[0].zone.id;
   const focus = view.byZone[focusId][sel];
@@ -70,7 +72,7 @@ export function HeatGrid({
       <div className="px-1">
         <h2 className="text-[15px] font-semibold">Zone demand heat grid</h2>
         <p className="mt-0.5 text-[12px] text-fg-3">
-          {limit ? `Top ${rows.length} of ${ZONES.length} zones` : `All ${ZONES.length} zones`}, every 15 minutes for the next{' '}
+          {limit ? `Top ${rows.length} of ${zones.length} zones` : `All ${zones.length} zones`}, every 15 minutes for the next{' '}
           {fmtDuration(view.steps.length * 15)}.
         </p>
       </div>
@@ -159,7 +161,7 @@ export function HeatGrid({
 
       {limit && onMore && (
         <button type="button" onClick={onMore} className="mt-2 h-10 w-full rounded-xl border border-line-2 text-[13px] font-medium">
-          Show all {ZONES.length} zones
+          Show all {zones.length} zones
         </button>
       )}
       <HeatLegend className="mt-3 px-1" />
@@ -169,7 +171,7 @@ export function HeatGrid({
         <div className="flex items-center gap-3">
           <MultBadge mult={focus.mult} className="h-10 w-14 text-[17px]" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[14px] font-medium">{ZONE_BY_ID[focusId].name}</p>
+            <p className="truncate text-[14px] font-medium">{zoneById[focusId]?.name}</p>
             <p className="truncate text-[12px] text-fg-3">
               {sel === 0 ? 'Now' : fmtClock(focus.t)} ·{' '}
               {focus.lo === focus.hi ? 'no surge expected' : `range ${focus.lo.toFixed(1)}–${fmtMult(focus.hi)}`}

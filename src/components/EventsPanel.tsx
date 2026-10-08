@@ -7,7 +7,7 @@ import type { NavApp } from '@/lib/nav';
 import { MIN } from '@/lib/time';
 import type { EventFeed, EventKind, VenueEvent } from '@/lib/types';
 import { clamp } from '@/lib/util';
-import { SPOT_BY_ID, ZONE_BY_ID } from '@/lib/zones';
+import { useRegion } from './RegionContext';
 import { Card, NavLink, Segmented, cx } from './ui';
 
 const KIND_ICON: Record<EventKind, LucideIcon> = {
@@ -85,7 +85,8 @@ function statusLine(event: VenueEvent, now: number): { label: string; live: bool
 
 function EventCard({ event, now, navApp }: { event: VenueEvent; now: number; navApp: NavApp }) {
   const Icon = KIND_ICON[event.kind];
-  const spot = SPOT_BY_ID[event.stagingSpotId];
+  const { spotById, zoneById } = useRegion();
+  const spot = spotById[event.stagingSpotId];
   const { label, live } = statusLine(event, now);
   const exit = exitTime(event);
   const nightlife = event.kind === 'nightlife';
@@ -108,7 +109,7 @@ function EventCard({ event, now, navApp }: { event: VenueEvent; now: number; nav
           {/* For a club the venue is the headline; for a show it is the event. */}
           <h3 className="mt-1.5 text-[16px] font-semibold leading-snug">{nightlife ? event.venue : event.title}</h3>
           <p className="mt-0.5 truncate text-[12px] text-fg-3">
-            {nightlife ? event.title : event.venue} · {ZONE_BY_ID[event.zoneId].name}
+            {nightlife ? event.title : event.venue} · {zoneById[event.zoneId]?.name}
           </p>
         </div>
         <div className="shrink-0 text-right">

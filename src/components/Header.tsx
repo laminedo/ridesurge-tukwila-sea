@@ -1,4 +1,4 @@
-import { FlaskConical, History, RefreshCw, Settings, WifiOff } from 'lucide-react';
+import { FlaskConical, History, MapPin, RefreshCw, Settings, WifiOff } from 'lucide-react';
 import { fmtClock, fmtDuration, fmtWeekday } from '@/lib/format';
 import { LogoMark, cx } from './ui';
 
@@ -27,20 +27,25 @@ function StatusPill({ health, ageMin, simulating }: { health: Health; ageMin: nu
 
 export function Header({
   now,
+  area,
   health,
   ageMin,
   simulating,
   refreshing,
   onRefresh,
   onSettings,
+  onArea,
 }: {
   now: number | null;
+  /** Name of the market on screen. */
+  area: string;
   health: Health;
   ageMin: number;
   simulating: boolean;
   refreshing: boolean;
   onRefresh: () => void;
   onSettings: () => void;
+  onArea: () => void;
 }) {
   const iconButton = 'flex size-10 items-center justify-center rounded-full text-fg-2 active:bg-raised';
 
@@ -51,13 +56,19 @@ export function Header({
         <LogoMark className="md:hidden" />
         <div className="min-w-0">
           <h1 className="text-[15px] font-semibold leading-tight tracking-tight">RideSurge</h1>
-          <p className="truncate text-[11px] leading-tight text-fg-3">
-            {now === null
-              ? 'Tukwila / SEA'
-              : simulating
-                ? `${fmtWeekday(now)} ${fmtClock(now)} · simulated`
-                : `${fmtClock(now)} · Tukwila / SEA`}
-          </p>
+          {/* The area is a button: it opens the picker for another city or the driver's own location. */}
+          <button
+            type="button"
+            onClick={onArea}
+            aria-label={`Area: ${area}. Change area`}
+            className="-my-1 flex max-w-full items-center gap-1 py-1 text-left text-[11px] leading-tight text-fg-3"
+          >
+            <MapPin className="size-3 shrink-0 text-accent" aria-hidden />
+            <span className="truncate">
+              {area}
+              {now !== null && ` · ${simulating ? `${fmtWeekday(now)} ` : ''}${fmtClock(now)}`}
+            </span>
+          </button>
         </div>
         <div className="ml-auto flex items-center gap-0.5">
           <StatusPill health={health} ageMin={ageMin} simulating={simulating} />

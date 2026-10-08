@@ -1,3 +1,4 @@
+/** Zones and staging spots of the curated Seattle–Tacoma market (see `regions/seattle.ts`). */
 import type { LatLng, StagingSpot, Zone, ZoneId } from './types';
 
 export const HOME_BASE: LatLng & { label: string } = {

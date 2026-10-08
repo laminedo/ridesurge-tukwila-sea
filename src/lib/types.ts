@@ -1,25 +1,5 @@
-export type ZoneId =
-  | 'SEA'
-  | 'TUK'
-  | 'REN'
-  | 'KNT'
-  | 'SODO'
-  | 'DTN'
-  | 'CAP'
-  | 'SLU'
-  | 'LQA'
-  | 'UDX'
-  | 'BEL'
-  | 'BAL'
-  | 'FRE'
-  | 'NGT'
-  | 'AUR'
-  | 'SHO'
-  | 'WSE'
-  | 'BUR'
-  | 'FDW'
-  | 'KRK'
-  | 'RDM';
+/** Zone ids are unique within a region ("SEA", "DTN", …). */
+export type ZoneId = string;
 
 export interface LatLng {
   lat: number;
@@ -45,6 +25,20 @@ export interface StagingSpot extends LatLng {
   note: string;
   /** True for lots designated by the airport/venue; false for suggested areas. */
   official: boolean;
+}
+
+/** The market a snapshot describes: what the screens need to draw it. */
+export interface RegionInfo {
+  id: string;
+  name: string;
+  /** Hand-tuned market, or one generated around the driver from the bundled gazetteer. */
+  source: 'curated' | 'generated';
+  timeZone: string;
+  /** Where drive times start when the driver's own position is not in use. */
+  home: LatLng & { label: string };
+  airport: { code: string; name: string; zoneId: ZoneId } | null;
+  zones: Zone[];
+  spots: StagingSpot[];
 }
 
 /* ---------- Flights ---------- */
@@ -133,7 +127,7 @@ export interface VenueEvent {
   status: EventStatus;
   stagingSpotId: string;
   /** Share of egress demand landing in each zone (riders walk out of the geofence). */
-  spill: Partial<Record<ZoneId, number>>;
+  spill: Record<ZoneId, number>;
   bucketMin: number;
   curve: { t: number; requests: number }[];
 }
@@ -206,6 +200,7 @@ export interface ForecastFeed {
 export interface Snapshot {
   generatedAt: number;
   simulated: boolean;
+  region: RegionInfo;
   flights: FlightFeed;
   airportRuns: AirportRunFeed;
   events: EventFeed;

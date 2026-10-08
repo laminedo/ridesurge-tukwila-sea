@@ -8,8 +8,8 @@ import type { Recommendation } from '@/lib/recommend';
 import { MIN } from '@/lib/time';
 import type { Snapshot, ZoneId, ZoneStep } from '@/lib/types';
 import type { View } from '@/lib/view';
-import { ZONE_BY_ID, spotsForZone } from '@/lib/zones';
 import { CauseIcon } from './BestMove';
+import { useRegion } from './RegionContext';
 import { Sheet } from './Sheet';
 import { MultBadge, NavLink } from './ui';
 
@@ -159,7 +159,8 @@ export function ZoneSheet({
   onSelect: (step: number) => void;
   onClose: () => void;
 }) {
-  const zone = zoneId ? ZONE_BY_ID[zoneId] : null;
+  const { zoneById } = useRegion();
+  const zone = zoneId ? (zoneById[zoneId] ?? null) : null;
   const steps = zone && view ? view.byZone[zone.id] : null;
   const open = Boolean(zone && steps && snapshot);
 
@@ -191,10 +192,11 @@ function ZoneBody({
   navApp: NavApp;
   onSelect: (step: number) => void;
 }) {
+  const { info, spotsForZone } = useRegion();
   const step = steps[sel];
   const peak = steps.reduce((best, s) => (s.mult > best.mult ? s : best), steps[0]);
   const horizonEnd = steps[steps.length - 1].t + 15 * MIN;
-  const waves = zone === 'SEA' ? snapshot.flights.waves : [];
+  const waves = zone === info.airport?.zoneId ? snapshot.flights.waves : [];
   const airportNextHour = steps.slice(0, 4).reduce((s, x) => s + x.airport, 0);
   const events = snapshot.events.events.filter(
     (e) => (e.spill[zone] ?? 0) > 0 && e.egressEnd > now && e.egressStart < horizonEnd,
@@ -267,7 +269,7 @@ function ZoneBody({
               <li className="flex items-start gap-2">
                 <CauseIcon cause="airport" className="mt-0.5 size-4 shrink-0" />
                 <span>
-                  <span className="font-medium text-fg">Next hour</span> · about {airportNextHour} riders leaving here for Sea-Tac
+                  <span className="font-medium text-fg">Next hour</span> · about {airportNextHour} riders leaving here for {info.airport?.code ?? 'the airport'}
                 </span>
               </li>
             )}

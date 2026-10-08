@@ -5,7 +5,7 @@ import { NAV_APPS, type NavApp } from '@/lib/nav';
 import type { Recommendation } from '@/lib/recommend';
 import type { ZoneId } from '@/lib/types';
 import type { View } from '@/lib/view';
-import { spotsForZone } from '@/lib/zones';
+import { useRegion } from './RegionContext';
 import { Card, ForecastStrip, MultBadge, NavLink, Segmented } from './ui';
 
 /** Quick-launch navigation to staging spots, best opportunity first. */
@@ -20,6 +20,8 @@ export function StagePanel({
   navApp: NavApp;
   onZone: (zone: ZoneId) => void;
 }) {
+  const { info, spotsForZone } = useRegion();
+
   return (
     <div className="space-y-3">
       <div className="px-1">
@@ -80,8 +82,10 @@ export function StagePanel({
       </div>
 
       <p className="px-1 pb-2 text-[11px] leading-relaxed text-fg-3">
-        Apart from the airport lots, these are suggested areas rather than designated waiting zones. Follow posted signs and your
-        platform&apos;s rules, and set your destination before you start driving.
+        {info.source === 'curated'
+          ? 'Apart from the airport lots, these are suggested areas rather than designated waiting zones.'
+          : 'These are town centres, venues and the airport itself rather than designated waiting zones.'}{' '}
+        Follow posted signs and your platform&apos;s rules, and set your destination before you start driving.
       </p>
     </div>
   );

@@ -1,6 +1,6 @@
-# RideSurge Tukwila/SEA
+# RideSurge
 
-A mobile-first Progressive Web App for rideshare drivers based in Tukwila, Washington. It combines Sea-Tac flight waves, rides from home to the airport, stadium, venue and club closing times and a demand forecast for 21 zones into one decision: where to stage, and when to leave, so you arrive ahead of the surge instead of chasing it.
+A Progressive Web App for rideshare drivers. It started as a tool for drivers based in Tukwila, Washington, and now builds itself around wherever you drive in the US. It combines Sea-Tac flight waves, rides from home to the airport, stadium, venue and club closing times and a demand forecast for 21 zones into one decision: where to stage, and when to leave, so you arrive ahead of the surge instead of chasing it.
 
 **Live demo:** https://laminedo.github.io/ridesurge-tukwila-sea/ (open it on your phone and add it to the home screen).
 
@@ -33,6 +33,23 @@ Other scripts: `npm test` (engine unit tests), `npm run lint`, `npm run typechec
 The service worker only registers in production builds, so test offline behaviour with `npm run build && npm start`, not `npm run dev`. Browsers also require HTTPS (or `localhost`) to install a PWA.
 
 > **Folder name.** This project lives in a folder called `uber:lyft` (shown as `uber/lyft` in Finder). The colon breaks npm's script `PATH`, so the scripts in `package.json` call each tool by its path under `node_modules`. If you move the project to a folder without a colon you can shorten them back to `next dev`, `eslint .` and so on.
+
+## Works where you drive
+
+Tap the area under the app name (or open Settings) to choose where the market is built:
+
+- **Seattle** is the hand-tuned market: 21 named zones, real staging spots, more than thirty venues and Sea-Tac's carrier mix.
+- **My location** asks the browser for your position and builds a market around it. If you are within about 45 miles of Seattle you get the hand-tuned one.
+- **Another city** lets you search any US city of 5,000 people or more.
+
+Outside Seattle the market is generated on the device from data bundled with the app (`src/lib/regions`):
+
+- **Zones** are towns and neighbourhoods from a US gazetteer (`src/data/us-places.json`, built from GeoNames by `npm run places`). Dense metros zoom in to neighbourhoods; small ones zoom out to surrounding towns. The radar puts you at the centre with true compass bearings.
+- **Airport** is the best commercial airport within 50 miles from a table of about a hundred, with flight volume sized to it. Areas with no airport simply have no flight screens.
+- **Venues** are the NFL, MLB, NBA, NHL and MLS stadiums and arenas, with home games in season and touring shows, plus a generic bar district and convention centre for larger cities.
+- **Times** are shown in the area's own time zone.
+
+Your location never leaves the device: nothing is looked up online, and the HTTP API only serves the Seattle market. A generated market is coarser than Seattle's. Staging spots are town centres and the venues themselves, and local clubs, theatres and college venues are not included.
 
 ## What is on each screen
 
@@ -140,9 +157,10 @@ Before relying on it on the road, also check the staging spots in `src/lib/zones
 ```
 src/app            App shell, manifest, API routes
 src/components     Screens and shared UI
-src/lib            Engine: sim/, forecast/, recommend.ts, zones.ts, time and geo helpers
+src/lib            Engine: sim/, forecast/, regions/, recommend.ts, time and geo helpers
+src/data           Bundled US gazetteer (generated)
 src/lib/client     Browser stores (clock, settings, tab) and the snapshot poller
 public             Service worker, offline page, icons
 services/timesfm   Python sidecar for the real model
-scripts            Icon generator
+scripts            Icon and gazetteer generators, GitHub Pages deploy
 ```

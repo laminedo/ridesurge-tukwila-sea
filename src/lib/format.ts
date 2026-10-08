@@ -1,11 +1,21 @@
 import { TZ } from './time';
 
-const clockFmt = new Intl.DateTimeFormat('en-US', {
-  timeZone: TZ,
-  hour: 'numeric',
-  minute: '2-digit',
-});
-const weekdayFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' });
+let displayZone = TZ;
+let clockFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
+let weekdayFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' });
+
+/** Every time on screen is shown in the region's own time zone. Call when the region changes. */
+export function setDisplayTimeZone(timeZone: string): void {
+  if (timeZone === displayZone) return;
+  displayZone = timeZone;
+  clockFmt = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' });
+  weekdayFmt = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' });
+}
+
+/** True when `t` falls on the hour in the display zone (half-hour zones included). */
+export function isOnTheHour(t: number): boolean {
+  return clockFmt.formatToParts(t).some((p) => p.type === 'minute' && p.value === '00');
+}
 const countFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 
 function clockParts(t: number) {

@@ -7,6 +7,7 @@
  * Replace `flightsForDay` with a real fetch and everything downstream (the lag
  * model, wave detection, forecast covariates) keeps working.
  */
+import type { Region } from '../regions/types';
 import { between, gauss, pick, pickWeighted, seeded, type Rng } from '../rng';
 import { HOUR, MIN, dayStart, floorTo, localClock } from '../time';
 import type { Flight, FlightBucket, FlightFeed, FlightStatus, FlightWave } from '../types';
@@ -18,10 +19,15 @@ export const LAG_MAX = 35;
 export const FLIGHT_BUCKET_MIN = 5;
 const BUCKET = FLIGHT_BUCKET_MIN * MIN;
 
-/** Scheduled arrivals per local hour (≈600 a day, in line with SEA). */
+/** Hourly shape of a day's arrivals (≈600 a day at Sea-Tac). Scaled to each airport's volume. */
 const HOURLY_ARRIVALS = [14, 5, 2, 1, 2, 6, 12, 18, 24, 30, 34, 36, 34, 32, 30, 30, 32, 34, 34, 32, 32, 34, 36, 28];
 
-const AIRCRAFT = {
+const HOURLY_TOTAL = HOURLY_ARRIVALS.reduce((s, n) => s + n, 0);
+
+/** Airport volume relative to the reference shape. */
+const scaleOf = (region: Region) => (region.flights ? region.flights.daily / HOURLY_TOTAL : 0);
+
+export const AIRCRAFT = {
   E75: { name: 'E175', seats: 76, wide: false },
   A220: { name: 'A220-300', seats: 130, wide: false },
   B738: { name: '737-800', seats: 159, wide: false },
@@ -36,24 +42,24 @@ const AIRCRAFT = {
   A359: { name: 'A350-900', seats: 306, wide: true },
   B77W: { name: '777-300ER', seats: 368, wide: true },
 } as const;
-type AircraftKey = keyof typeof AIRCRAFT;
+export type AircraftKey = keyof typeof AIRCRAFT;
 
-type Route = readonly [iata: string, city: string, blockMin: number];
+export type Route = readonly [iata: string, city: string, blockMin: number];
 
-interface Carrier {
+export interface Carrier {
   code: string;
-  /** Relative share of SEA arrivals. */
+  /** Relative share of the airport's arrivals. */
   weight: number;
-  /** Share of passengers ending their trip at SEA rather than connecting. */
+  /** Share of passengers ending their trip here rather than connecting. */
   od: number;
-  /** Arrivals that clear customs at SEA (pre-cleared Canadian flights do not). */
+  /** Arrivals that clear customs here (pre-cleared Canadian flights do not). */
   intl: boolean;
   fleet: readonly AircraftKey[];
   concourses: readonly string[];
   routes: readonly Route[];
 }
 
-const foreign = (code: string, fleet: AircraftKey, iata: string, city: string, blockMin: number): Carrier => ({
+export const foreign = (code: string, fleet: AircraftKey, iata: string, city: string, blockMin: number): Carrier => ({
   code,
   weight: 0.28,
   od: 0.93,
@@ -63,7 +69,8 @@ const foreign = (code: string, fleet: AircraftKey, iata: string, city: string, b
   routes: [[iata, city, blockMin]],
 });
 
-const CARRIERS: readonly Carrier[] = [
+/** Sea-Tac's carrier mix: an Alaska hub with a Delta focus city and long-haul to Asia and Europe. */
+export const SEATTLE_CARRIERS: readonly Carrier[] = [
   {
     code: 'AS', weight: 34, od: 0.62, intl: false, fleet: ['B739', 'B39M', 'B738'], concourses: ['C', 'D', 'N'],
     routes: [
@@ -144,8 +151,6 @@ const CARRIERS: readonly Carrier[] = [
 
 type RawFlight = Omit<Flight, 'status'> & { blockMin: number; taxiMin: number };
 
-/** Fleet-and-carrier-weighted passengers per arrival who end their trip at SEA. */
-const MEAN_TERMINATING_PAX = 104;
 
 /** Share of terminating passengers who request a ride, by local hour. */
 export function rideshareShare(hour: number): number {
@@ -170,10 +175,13 @@ function sampleDelay(r: Rng): number {
 const dayCache = new Map<string, RawFlight[]>();
 
 /** Every arrival scheduled on a local day, sorted by touchdown. */
-export function flightsForDay(day: number, offset: number): RawFlight[] {
-  const key = `${day}:${offset}`;
+export function flightsForDay(region: Region, day: number, offset: number): RawFlight[] {
+  const profile = region.flights;
+  if (!profile) return [];
+  const key = `${region.id}:${day}:${offset}`;
   const hit = dayCache.get(key);
   if (hit) return hit;
+  const scale = scaleOf(region);
 
   const start = dayStart(day, offset);
   const { dow } = localClock(start, offset);
@@ -182,14 +190,16 @@ export function flightsForDay(day: number, offset: number): RawFlight[] {
   const out: RawFlight[] = [];
 
   for (let hour = 0; hour < 24; hour++) {
-    const r = seeded('flights', day, hour);
-    const count = Math.round(HOURLY_ARRIVALS[hour] * volume * between(r, 0.9, 1.1));
+    const r = seeded('flights', region.id, day, hour);
+    const expected = HOURLY_ARRIVALS[hour] * scale * volume * between(r, 0.9, 1.1);
+    // Round at random so a small airport still gets its handful of flights.
+    const count = Math.floor(expected) + (r() < expected % 1 ? 1 : 0);
     // Hub schedules cluster into banks; two loose centres an hour gives realistic waves.
     const banks = [r() * 60, r() * 60];
 
     for (let i = 0; i < count; i++) {
       const minute = r() < 0.45 ? clamp(banks[i % 2] + gauss(r) * 9, 0, 59.9) : r() * 60;
-      const carrier = pickWeighted(r, CARRIERS, (c) => c.weight);
+      const carrier = pickWeighted(r, profile.carriers, (c) => c.weight);
       const [origin, originCity, blockMin] = pick(r, carrier.routes);
       const aircraft = AIRCRAFT[pick(r, carrier.fleet)];
       const concourse = pick(r, carrier.concourses);
@@ -206,7 +216,7 @@ export function flightsForDay(day: number, offset: number): RawFlight[] {
 
       // Regional jets empty fast; widebodies and customs push the lag out.
       const baseLag = carrier.intl ? 32.5 : aircraft.wide ? 28 : aircraft.seats < 100 ? 21.5 : 24;
-      const satellite = concourse === 'N' || concourse === 'S' ? 1.5 : 0;
+      const satellite = profile.satellites.includes(concourse) ? 1.5 : 0;
       const lagMin = clamp(baseLag + satellite + gauss(r) * 1.2, LAG_MIN + 1, LAG_MAX - 1);
 
       out.push({
@@ -233,19 +243,19 @@ export function flightsForDay(day: number, offset: number): RawFlight[] {
   }
 
   out.sort((a, b) => a.touchdown - b.touchdown);
-  if (dayCache.size >= 24) dayCache.delete(dayCache.keys().next().value as string);
+  if (dayCache.size >= 40) dayCache.delete(dayCache.keys().next().value as string);
   dayCache.set(key, out);
   return out;
 }
 
 /** Arrivals touching down in [from, to), across day boundaries. */
-function flightsBetween(from: number, to: number, offset: number): RawFlight[] {
+function flightsBetween(region: Region, from: number, to: number, offset: number): RawFlight[] {
   // A badly delayed flight can land up to ~3 h after its scheduled day ends.
   const firstDay = localClock(from - 3 * HOUR, offset).day;
   const lastDay = localClock(to + HOUR, offset).day;
   const out: RawFlight[] = [];
   for (let day = firstDay; day <= lastDay; day++) {
-    for (const f of flightsForDay(day, offset)) {
+    for (const f of flightsForDay(region, day, offset)) {
       if (f.touchdown >= from && f.touchdown < to) out.push(f);
     }
   }
@@ -278,10 +288,10 @@ export function spreadCurb(
 }
 
 /** Ride requests at the airport curb per step over a window (forecast covariate). */
-export function flightCurbSeries(start: number, stepMs: number, steps: number, offset: number): number[] {
+export function flightCurbSeries(region: Region, start: number, stepMs: number, steps: number, offset: number): number[] {
   const series = new Array<number>(steps).fill(0);
   const end = start + steps * stepMs;
-  for (const f of flightsBetween(start - LAG_MAX * MIN, end, offset)) {
+  for (const f of flightsBetween(region, start - LAG_MAX * MIN, end, offset)) {
     spreadCurb(f.touchdown, f.requests, f.lagMin, stepMs, (t, amount) => {
       const i = Math.round((t - start) / stepMs);
       if (i >= 0 && i < steps) series[i] += amount;
@@ -299,15 +309,39 @@ function arrivalsPerHour(hour: number): number {
   return lerp(HOURLY_ARRIVALS[i], HOURLY_ARRIVALS[(i + 1) % 24], h - i);
 }
 
+const rideBaseCache = new Map<string, number>();
+
+/**
+ * Riders per arrival before the time-of-day rideshare share is applied,
+ * averaged over the airport's own carrier and fleet mix. Measured from two
+ * sample days so it stays right for any region.
+ */
+function rideBasePerFlight(region: Region): number {
+  const hit = rideBaseCache.get(region.id);
+  if (hit !== undefined) return hit;
+  let sum = 0;
+  let count = 0;
+  for (const day of [20000, 20003]) {
+    for (const f of flightsForDay(region, day, 0)) {
+      sum += f.requests / rideshareShare(localClock(f.touchdown, 0).hour);
+      count++;
+    }
+  }
+  const base = count ? sum / count : 0;
+  rideBaseCache.set(region.id, base);
+  return base;
+}
+
 /**
  * Curb demand the airport driver queue is used to at this hour, per step.
- * Supply at SEA tracks this pattern, so surge appears when a bank of arrivals
- * (or a pile-up of delays) lands well above it.
+ * Supply at the airport tracks this pattern, so surge appears when a bank of
+ * arrivals (or a pile-up of delays) lands well above it.
  */
-export function typicalCurbDemand(hour: number, stepMin: number): number {
+export function typicalCurbDemand(region: Region, hour: number, stepMin: number): number {
+  if (!region.flights) return 0;
   const landedAt = hour - 27 / 60;
-  const requestsPerFlight = (MEAN_TERMINATING_PAX * rideshareShare(wrapHour(landedAt))) / 1.47;
-  return (arrivalsPerHour(landedAt) * requestsPerFlight * stepMin) / 60;
+  const requestsPerFlight = rideBasePerFlight(region) * rideshareShare(wrapHour(landedAt));
+  return (arrivalsPerHour(landedAt) * scaleOf(region) * requestsPerFlight * stepMin) / 60;
 }
 
 function statusOf(f: RawFlight, now: number): FlightStatus {
@@ -338,9 +372,10 @@ function toFlight(f: RawFlight, now: number): Flight {
   };
 }
 
-function detectWaves(buckets: FlightBucket[], flights: RawFlight[], now: number): FlightWave[] {
+function detectWaves(buckets: FlightBucket[], flights: RawFlight[], now: number, scale: number): FlightWave[] {
   const mean = buckets.reduce((s, b) => s + b.curb, 0) / Math.max(1, buckets.length);
-  const threshold = Math.max(10, mean * 1.2);
+  // A wave has to stand out, and at a small airport it also has to be worth a trip.
+  const threshold = Math.max(3 + 7 * Math.min(1, scale), mean * 1.2);
   const waves: FlightWave[] = [];
   let run: FlightBucket[] = [];
 
@@ -379,11 +414,11 @@ function detectWaves(buckets: FlightBucket[], flights: RawFlight[], now: number)
 const BUCKETS_BACK = 9;
 const BUCKETS_AHEAD = 36;
 
-export function buildFlightFeed(now: number, offset: number): FlightFeed {
+export function buildFlightFeed(region: Region, now: number, offset: number): FlightFeed {
   const windowStart = floorTo(now, BUCKET) - BUCKETS_BACK * BUCKET;
   const count = BUCKETS_BACK + BUCKETS_AHEAD;
   const windowEnd = windowStart + count * BUCKET;
-  const flights = flightsBetween(windowStart - LAG_MAX * MIN, windowEnd, offset);
+  const flights = flightsBetween(region, windowStart - LAG_MAX * MIN, windowEnd, offset);
 
   const buckets: FlightBucket[] = Array.from({ length: count }, (_, i) => ({
     t: windowStart + i * BUCKET,
@@ -421,7 +456,7 @@ export function buildFlightFeed(now: number, offset: number): FlightFeed {
     bucketMin: FLIGHT_BUCKET_MIN,
     lag: { minMin: LAG_MIN, maxMin: LAG_MAX },
     buckets,
-    waves: detectWaves(buckets, flights, now),
+    waves: detectWaves(buckets, flights, now, scaleOf(region)),
     arrivals,
   };
 }

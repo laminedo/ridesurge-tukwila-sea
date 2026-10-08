@@ -1,7 +1,7 @@
 {
-  "name": "RideSurge Tukwila/SEA",
+  "name": "RideSurge",
   "short_name": "RideSurge",
-  "description": "Flight waves, venue dismissals and a surge forecast for rideshare drivers working Sea-Tac and Seattle.",
+  "description": "Flight waves, rides to the airport, venue dismissals and a surge forecast for rideshare drivers, built around wherever you drive.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

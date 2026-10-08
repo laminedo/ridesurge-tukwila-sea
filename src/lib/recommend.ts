@@ -6,10 +6,9 @@
  */
 import { fmtClock, fmtCount, fmtRange } from './format';
 import { driveMinutes } from './geo';
-import { HOUR, MIN, localClock, pacificOffsetMs } from './time';
+import { HOUR, MIN, localClock, zoneOffsetMs } from './time';
 import type { LatLng, Snapshot, StagingSpot, VenueEvent, Zone, ZoneStep } from './types';
 import { clamp } from './util';
-import { SPOT_BY_ID, ZONES, defaultSpot } from './zones';
 
 export type Cause = 'flights' | 'airport' | 'events' | 'organic';
 
@@ -65,7 +64,15 @@ function organicReason(hour: number, dow: number): string {
   return 'Demand running ahead of available drivers';
 }
 
-function reasonFor(snapshot: Snapshot, zone: Zone, step: ZoneStep, cause: Cause, stepMs: number, offset: number): string {
+function reasonFor(
+  snapshot: Snapshot,
+  zone: Zone,
+  step: ZoneStep,
+  cause: Cause,
+  stepMs: number,
+  offset: number,
+  airportCode: string,
+): string {
   if (cause === 'flights') {
     const wave = snapshot.flights.waves.find((w) => w.start < step.t + stepMs && w.end > step.t);
     return wave
@@ -73,7 +80,7 @@ function reasonFor(snapshot: Snapshot, zone: Zone, step: ZoneStep, cause: Cause,
       : `Arrivals reach the curb around ${fmtClock(step.t)}`;
   }
   if (cause === 'airport') {
-    return `About ${step.airport} riders leaving here for Sea-Tac around ${fmtClock(step.t)}: long fares to catch the next departure bank`;
+    return `About ${step.airport} riders leaving here for ${airportCode} around ${fmtClock(step.t)}: long fares to catch the next departure bank`;
   }
   if (cause === 'events') {
     const event = eventFor(snapshot, zone, step.t);
@@ -95,19 +102,24 @@ function reasonFor(snapshot: Snapshot, zone: Zone, step: ZoneStep, cause: Cause,
  * "now" (greater than zero when working from an older saved snapshot).
  */
 export function rankZones(snapshot: Snapshot, nowIdx: number, { origin, now }: DriverContext): Recommendation[] {
-  const offset = pacificOffsetMs(now);
+  const { region } = snapshot;
+  const offset = zoneOffsetMs(now, region.timeZone);
+  const airportCode = region.airport?.code ?? 'the airport';
+  const spotById = new Map(region.spots.map((s) => [s.id, s]));
+  const defaultSpot = (zoneId: string) => region.spots.find((s) => s.zoneId === zoneId);
   const { dow, hour } = localClock(now, offset);
   const stepMs = snapshot.forecast.stepMin * MIN;
 
-  const ranked = ZONES.flatMap((zone): Recommendation[] => {
+  const ranked = region.zones.flatMap((zone): Recommendation[] => {
     const steps = snapshot.forecast.zones.find((z) => z.zoneId === zone.id)?.steps.slice(nowIdx) ?? [];
     if (steps.length === 0) return [];
 
     // Pick the staging spot from what drives the zone's biggest step.
     const hottest = steps.reduce((best, s) => (s.mult > best.mult ? s : best), steps[0]);
     const hotEvent = causeOf(hottest) === 'events' ? eventFor(snapshot, zone, hottest.t) : undefined;
-    const eventSpot = hotEvent ? SPOT_BY_ID[hotEvent.stagingSpotId] : undefined;
+    const eventSpot = hotEvent ? spotById.get(hotEvent.stagingSpotId) : undefined;
     const spot = eventSpot?.zoneId === zone.id ? eventSpot : defaultSpot(zone.id);
+    if (!spot) return [];
 
     const driveMin = driveMinutes(origin, spot, dow, hour);
     const arrive = now + driveMin * MIN;
@@ -153,7 +165,7 @@ export function rankZones(snapshot: Snapshot, nowIdx: number, { origin, now }: D
         stageBy,
         leaveBy: stageBy - driveMin * MIN,
         cause,
-        reason: reasonFor(snapshot, zone, peak, cause, stepMs, offset),
+        reason: reasonFor(snapshot, zone, peak, cause, stepMs, offset, airportCode),
         surge,
         score,
       },

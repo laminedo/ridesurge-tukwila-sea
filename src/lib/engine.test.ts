@@ -3,11 +3,12 @@ import { surgeMultiplier, MAX_MULTIPLIER } from './forecast/surge';
 import { CONTEXT_STEPS, HORIZON_STEPS, emulateTimesFM, runForecast, type SeriesInput } from './forecast/timesfm';
 import { driveMinutes } from './geo';
 import { rankZones } from './recommend';
+import { SEATTLE, resolveRegion } from './regions';
 import { LEAD_MAX, LEAD_MIN, airportRunTotals, buildAirportRunFeed, originShare } from './sim/departures';
 import { eventsForDay } from './sim/events';
 import { LAG_MAX, LAG_MIN, buildFlightFeed, flightsForDay, lagCdf, spreadCurb } from './sim/flights';
 import { buildSnapshot, resolveAt } from './snapshot';
-import { DAY, MIN, localClock, pacificOffsetMs } from './time';
+import { DAY, HOUR, MIN, localClock, pacificOffsetMs, zoneOffsetMs } from './time';
 import { HOME_BASE, STAGING_SPOTS, ZONES, defaultSpot } from './zones';
 
 // Friday 10:30 PM Pacific: late arrival banks, shows letting out, nightlife.
@@ -52,14 +53,14 @@ describe('touchdown → ride request lag', () => {
 });
 
 describe('flight feed', () => {
-  const feed = buildFlightFeed(FRIDAY_NIGHT, OFFSET);
+  const feed = buildFlightFeed(SEATTLE, FRIDAY_NIGHT, OFFSET);
 
   it('is deterministic for a given moment', () => {
-    expect(buildFlightFeed(FRIDAY_NIGHT, OFFSET)).toEqual(feed);
+    expect(buildFlightFeed(SEATTLE, FRIDAY_NIGHT, OFFSET)).toEqual(feed);
   });
 
   it('generates a realistic day of arrivals', () => {
-    const day = flightsForDay(localClock(FRIDAY_NIGHT, OFFSET).day, OFFSET);
+    const day = flightsForDay(SEATTLE, localClock(FRIDAY_NIGHT, OFFSET).day, OFFSET);
     expect(day.length).toBeGreaterThan(450);
     expect(day.length).toBeLessThan(750);
   });
@@ -100,7 +101,7 @@ describe('venue egress', () => {
   const day = localClock(FRIDAY_NIGHT, OFFSET).day;
 
   it('releases the whole crowd once, peaking after early leavers start', () => {
-    const events = Array.from({ length: 7 }, (_, i) => eventsForDay(day + i, OFFSET)).flat();
+    const events = Array.from({ length: 7 }, (_, i) => eventsForDay(SEATTLE, day + i, OFFSET)).flat();
     expect(events.length).toBeGreaterThan(5);
     for (const e of events) {
       const released = e.curve.reduce((s, v) => s + v, 0);
@@ -117,7 +118,7 @@ describe('venue egress', () => {
 describe('clubs and late-night venues', () => {
   it('empty toward closing time with the rush at last call', () => {
     // Friday night: every club is open.
-    const clubs = eventsForDay(localClock(FRIDAY_NIGHT, OFFSET).day, OFFSET).filter((e) => e.kind === 'nightlife');
+    const clubs = eventsForDay(SEATTLE, localClock(FRIDAY_NIGHT, OFFSET).day, OFFSET).filter((e) => e.kind === 'nightlife');
     expect(clubs.length).toBeGreaterThanOrEqual(8);
     expect(clubs.some((e) => e.tag === 'Showgirls')).toBe(true);
     for (const club of clubs) {
@@ -137,18 +138,18 @@ describe('rides to the airport', () => {
 
   it('peak before dawn and fade overnight', () => {
     const offset = pacificOffsetMs(EARLY);
-    const morning = airportRunTotals(EARLY, 15 * MIN, 4, offset).reduce((s, v) => s + v, 0);
-    const lateNight = airportRunTotals(EARLY - 5 * 60 * MIN, 15 * MIN, 4, offset).reduce((s, v) => s + v, 0);
+    const morning = airportRunTotals(SEATTLE, EARLY, 15 * MIN, 4, offset).reduce((s, v) => s + v, 0);
+    const lateNight = airportRunTotals(SEATTLE, EARLY - 5 * 60 * MIN, 15 * MIN, 4, offset).reduce((s, v) => s + v, 0);
     expect(morning).toBeGreaterThan(200);
     expect(lateNight).toBeLessThan(morning / 10);
     expect(LEAD_MIN).toBeLessThan(LEAD_MAX);
   });
 
   it('start in neighbourhoods and hotels, never at the airport itself', () => {
-    const feed = buildAirportRunFeed(EARLY, pacificOffsetMs(EARLY));
-    expect(originShare('SEA')).toBe(0);
+    const feed = buildAirportRunFeed(SEATTLE, EARLY, pacificOffsetMs(EARLY));
+    expect(originShare(SEATTLE, 'SEA')).toBe(0);
     expect(feed.zones.some((z) => z.zoneId === 'SEA')).toBe(false);
-    expect(ZONES.reduce((s, z) => s + originShare(z.id), 0)).toBeCloseTo(1, 6);
+    expect(ZONES.reduce((s, z) => s + originShare(SEATTLE, z.id), 0)).toBeCloseTo(1, 6);
     feed.total.forEach((total, i) => {
       const split = feed.zones.reduce((s, z) => s + z.requests[i], 0);
       expect(Math.abs(split - total)).toBeLessThan(1.5);
@@ -341,5 +342,79 @@ describe('zones and staging', () => {
     expect(airport).toBeLessThan(15);
     expect(bellevue).toBeGreaterThan(airport);
     expect(driveMinutes(HOME_BASE, defaultSpot('BEL'), 3, 17)).toBeGreaterThan(bellevue);
+  });
+});
+
+describe('regions anywhere in the US', () => {
+  const AREAS = [
+    { label: 'Dallas, TX', lat: 32.78, lng: -96.8, airport: 'DFW', timeZone: 'America/Chicago' },
+    { label: 'Manhattan, NY', lat: 40.75, lng: -73.99, airport: 'LGA', timeZone: 'America/New_York' },
+    { label: 'Los Angeles, CA', lat: 34.05, lng: -118.25, airport: 'LAX', timeZone: 'America/Los_Angeles' },
+    { label: 'Boise, ID', lat: 43.62, lng: -116.2, airport: 'BOI', timeZone: 'America/Boise' },
+    { label: 'Miami, FL', lat: 25.77, lng: -80.19, airport: 'MIA', timeZone: 'America/New_York' },
+  ];
+
+  it('keeps the hand-tuned market for drivers around Seattle', async () => {
+    expect(await resolveRegion({ mode: 'seattle' })).toBe(SEATTLE);
+    expect(await resolveRegion({ mode: 'point', lat: 47.46, lng: -122.26 })).toBe(SEATTLE);
+    for (const program of SEATTLE.programs) expect(SEATTLE.venues[program.venue]).toBeDefined();
+  });
+
+  it.each(AREAS)('builds a usable market around $label', async (area) => {
+    const region = await resolveRegion({ mode: 'point', lat: area.lat, lng: area.lng });
+    expect(region.source).toBe('generated');
+    expect(region.timeZone).toBe(area.timeZone);
+    expect(region.airport?.code).toBe(area.airport);
+    expect(region.zones.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(region.zones.map((z) => z.id)).size).toBe(region.zones.length);
+
+    // Every zone is drawable, forecastable and has somewhere to navigate to.
+    for (const a of region.zones) {
+      expect(region.profiles[a.id]).toBeDefined();
+      expect(region.spots.some((s) => s.zoneId === a.id)).toBe(true);
+      expect(Math.hypot(a.radar.x - 50, a.radar.y - 50)).toBeLessThanOrEqual(44);
+      for (const b of region.zones) {
+        if (a.id < b.id) expect(Math.hypot(a.radar.x - b.radar.x, a.radar.y - b.radar.y)).toBeGreaterThanOrEqual(12.5);
+      }
+    }
+    for (const program of region.programs) expect(region.venues[program.venue]).toBeDefined();
+    for (const venue of Object.values(region.venues)) expect(region.spots.some((s) => s.id === venue.spot)).toBe(true);
+  });
+
+  it.each(AREAS)('forecasts and recommends for $label in its own time zone', async (area) => {
+    const region = await resolveRegion({ mode: 'point', lat: area.lat, lng: area.lng });
+    const snapshot = await buildSnapshot(FRIDAY_NIGHT, region);
+    expect(snapshot.region.id).toBe(region.id);
+    expect(snapshot.forecast.zones.map((z) => z.zoneId)).toEqual(region.zones.map((z) => z.id));
+    for (const zone of snapshot.forecast.zones) {
+      for (const s of zone.steps) {
+        expect(Number.isFinite(s.mult)).toBe(true);
+        expect(s.mult).toBeGreaterThanOrEqual(1);
+        expect(s.mult).toBeLessThanOrEqual(MAX_MULTIPLIER);
+      }
+    }
+    // Flights land at this region's airport and nowhere else.
+    const airportZone = snapshot.forecast.zones.find((z) => z.zoneId === area.airport);
+    expect(airportZone).toBeDefined();
+    expect(snapshot.flights.arrivals.every((f) => f.origin !== area.airport)).toBe(true);
+
+    const ranked = rankZones(snapshot, 0, { origin: region.home, now: FRIDAY_NIGHT });
+    expect(ranked).toHaveLength(region.zones.length);
+
+    // Local midnight differs from Pacific midnight outside the Pacific zone.
+    const offset = zoneOffsetMs(FRIDAY_NIGHT, region.timeZone);
+    expect(Math.abs(offset) % (HOUR / 2)).toBe(0);
+  });
+
+  it('sizes the flight feed to the airport', async () => {
+    const day = localClock(FRIDAY_NIGHT, OFFSET).day;
+    const dallas = await resolveRegion({ mode: 'point', lat: 32.78, lng: -96.8 });
+    const boise = await resolveRegion({ mode: 'point', lat: 43.62, lng: -116.2 });
+    expect(flightsForDay(dallas, day, OFFSET).length).toBeGreaterThan(flightsForDay(boise, day, OFFSET).length * 5);
+    expect(flightsForDay(boise, day, OFFSET).length).toBeGreaterThan(30);
+  });
+
+  it('refuses a location with no towns in reach', async () => {
+    await expect(resolveRegion({ mode: 'point', lat: 39.5, lng: -116.9 })).rejects.toThrow();
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { CircleAlert, FlaskConical, History, WifiOff } from 'lucide-react';
+import { CircleAlert, FlaskConical, History, MapPinOff, WifiOff } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { STATIC_EXPORT } from '@/lib/client/env';
 import { setTab, useGeolocation, useNow, useOnline, useSettings, useTab, useWide } from '@/lib/client/stores';
@@ -8,15 +8,16 @@ import { useSnapshot } from '@/lib/client/useSnapshot';
 import { fmtClock, fmtWeekday } from '@/lib/format';
 import { haversineMi } from '@/lib/geo';
 import { rankZones } from '@/lib/recommend';
+import type { AreaSpec } from '@/lib/regions';
 import { MIN } from '@/lib/time';
-import type { ZoneId } from '@/lib/types';
+import type { LatLng, ZoneId } from '@/lib/types';
 import { buildView, currentStep } from '@/lib/view';
-import { HOME_BASE, ZONES } from '@/lib/zones';
 import { BestMove } from './BestMove';
 import { BottomNav } from './BottomNav';
 import { EventsPanel, EventsSummary } from './EventsPanel';
 import { AirportRunsCard, FlightMonitor, FlightWaveCard, UpcomingWavesCard } from './FlightMonitor';
 import { Header, type Health } from './Header';
+import { RegionProvider } from './RegionContext';
 import { HeatGrid } from './HeatGrid';
 import { SettingsSheet } from './SettingsSheet';
 import { StagePanel } from './StagePanel';
@@ -66,21 +67,40 @@ export function AppShell() {
   const [zoneId, setZoneId] = useState<ZoneId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const { snapshot, error, loading, refresh } = useSnapshot(simOffset);
-  const geolocation = useGeolocation(settings.origin === 'gps');
-  const origin = settings.origin === 'gps' && geolocation.position ? geolocation.position : HOME_BASE;
+  // Where the market is built: the curated one, around a chosen city, or around the device.
+  const { area } = settings;
+  const geolocation = useGeolocation(area.mode === 'gps');
+  const anchor = area.mode === 'gps' ? geolocation.anchor : area.mode === 'city' ? area : null;
+  const anchorLat = anchor?.lat;
+  const anchorLng = anchor?.lng;
+  const spec = useMemo<AreaSpec>(
+    () => (anchorLat !== undefined && anchorLng !== undefined ? { mode: 'point', lat: anchorLat, lng: anchorLng } : { mode: 'seattle' }),
+    [anchorLat, anchorLng],
+  );
+
+  const { snapshot, error, loading, refresh } = useSnapshot(simOffset, spec);
+  const region = snapshot?.region;
   const now = realNow === null ? null : realNow + simOffset;
+
+  // Drive times start from the driver when we know where they are, else from the area's base.
+  const live = area.mode === 'gps' ? geolocation.position : null;
+  const originLat = live?.lat ?? (area.mode === 'city' ? area.lat : region?.home.lat);
+  const originLng = live?.lng ?? (area.mode === 'city' ? area.lng : region?.home.lng);
+  const origin = useMemo<LatLng | null>(
+    () => (originLat !== undefined && originLng !== undefined ? { lat: originLat, lng: originLng } : null),
+    [originLat, originLng],
+  );
 
   const nowIdx = snapshot && now !== null ? currentStep(snapshot, now) : 0;
   const view = useMemo(() => (snapshot ? buildView(snapshot, nowIdx) : null), [snapshot, nowIdx]);
   const recs = useMemo(
-    () => (snapshot && view && now !== null ? rankZones(snapshot, nowIdx, { origin, now }) : []),
+    () => (snapshot && view && origin && now !== null ? rankZones(snapshot, nowIdx, { origin, now }) : []),
     [snapshot, view, nowIdx, origin, now],
   );
-  const hereZoneId = useMemo(
-    () => ZONES.reduce((best, z) => (haversineMi(origin, z) < haversineMi(origin, best) ? z : best), ZONES[0]).id,
-    [origin],
-  );
+  const hereZoneId = useMemo(() => {
+    if (!region || !origin) return '';
+    return region.zones.reduce((best, z) => (haversineMi(origin, z) < haversineMi(origin, best) ? z : best), region.zones[0]).id;
+  }, [region, origin]);
 
   const ageMs = snapshot && now !== null ? Math.max(0, now - snapshot.generatedAt) : 0;
   const health: Health =
@@ -95,7 +115,8 @@ export function AppShell() {
       }
     : {};
 
-  const airportDrive = recs.find((r) => r.zone.id === 'SEA')?.driveMin ?? 0;
+  const airportDrive = recs.find((r) => r.zone.id === region?.airport?.zoneId)?.driveMin ?? 0;
+  const openSettings = () => setSettingsOpen(true);
 
   return (
     <div className="min-h-dvh md:flex">
@@ -104,14 +125,25 @@ export function AppShell() {
       <div className="flex min-h-dvh min-w-0 flex-1 flex-col">
       <Header
         now={now}
+        area={region?.name ?? (area.mode === 'city' ? `${area.name}, ${area.state}` : 'Seattle–Tacoma')}
         health={health}
         ageMin={ageMs / MIN}
         simulating={simOffset !== 0}
         refreshing={loading}
         onRefresh={refresh}
-        onSettings={() => setSettingsOpen(true)}
+        onSettings={openSettings}
+        onArea={openSettings}
       />
 
+      {area.mode === 'gps' && geolocation.error && (
+        <Notice
+          icon={<MapPinOff className="size-4 text-warning" aria-hidden />}
+          title="No location."
+          body={`${geolocation.error} Showing Seattle–Tacoma instead.`}
+          action="Pick a city"
+          onAction={openSettings}
+        />
+      )}
       {snapshot && view && health === 'offline' && (
         <Notice
           icon={<WifiOff className="size-4 text-critical" aria-hidden />}
@@ -151,15 +183,21 @@ export function AppShell() {
                 Could not load the forecast
               </p>
               <p className="mt-1.5 text-[13px] leading-snug text-fg-3">{error} Nothing is saved on this device yet, so there is no offline copy to show.</p>
-              <button type="button" onClick={refresh} className="mt-3 h-12 w-full rounded-xl bg-accent text-[15px] font-semibold text-accent-ink">
-                Try again
-              </button>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button type="button" onClick={refresh} className="h-12 rounded-xl bg-accent text-[15px] font-semibold text-accent-ink">
+                  Try again
+                </button>
+                <button type="button" onClick={openSettings} className="h-12 rounded-xl border border-line-2 text-[15px] font-semibold">
+                  Change area
+                </button>
+              </div>
             </Card>
           ) : (
             <Skeleton />
           )
         ) : (
           // Hold the previous render through a refresh instead of flashing a skeleton.
+          <RegionProvider region={snapshot.region}>
           <div className="space-y-3">
             {snapshot.simulated && (
               <p className="flex min-h-6 items-center gap-1.5 px-1 text-[11px] leading-snug text-fg-3">
@@ -198,14 +236,20 @@ export function AppShell() {
                       onMore={() => setTab('grid')}
                       className="md:col-span-2 xl:col-span-1"
                     />
-                    <div className="grid content-start gap-3 md:col-span-2">
-                      <FlightWaveCard feed={snapshot.flights} now={now} />
-                      <div className="grid items-start gap-3 md:grid-cols-2">
-                        <UpcomingWavesCard feed={snapshot.flights} now={now} driveMin={airportDrive} navApp={settings.navApp} limit={2} />
-                        <EventsSummary feed={snapshot.events} now={now} onMore={() => setTab('events')} />
-                      </div>
-                    </div>
-                    <AirportRunsCard feed={snapshot.airportRuns} recs={recs} onZone={setZoneId} limit={5} className="md:col-span-2 xl:col-span-1" />
+                    {snapshot.region.airport ? (
+                      <>
+                        <div className="grid content-start gap-3 md:col-span-2">
+                          <FlightWaveCard feed={snapshot.flights} now={now} />
+                          <div className="grid items-start gap-3 md:grid-cols-2">
+                            <UpcomingWavesCard feed={snapshot.flights} now={now} driveMin={airportDrive} navApp={settings.navApp} limit={2} />
+                            <EventsSummary feed={snapshot.events} now={now} onMore={() => setTab('events')} />
+                          </div>
+                        </div>
+                        <AirportRunsCard feed={snapshot.airportRuns} recs={recs} onZone={setZoneId} limit={5} className="md:col-span-2 xl:col-span-1" />
+                      </>
+                    ) : (
+                      <EventsSummary feed={snapshot.events} now={now} onMore={() => setTab('events')} className="md:col-span-2" />
+                    )}
                   </>
                 )}
               </div>
@@ -225,21 +269,22 @@ export function AppShell() {
             {tab === 'events' && <EventsPanel feed={snapshot.events} now={now} navApp={settings.navApp} />}
             {tab === 'stage' && <StagePanel recs={recs} view={view} navApp={settings.navApp} onZone={setZoneId} />}
           </div>
+          <ZoneSheet
+            zoneId={zoneId}
+            view={view}
+            snapshot={snapshot}
+            rec={recs.find((r) => r.zone.id === zoneId)}
+            sel={sel}
+            now={now}
+            navApp={settings.navApp}
+            onSelect={setStep}
+            onClose={() => setZoneId(null)}
+          />
+          </RegionProvider>
         )}
       </main>
       </div>
 
-      <ZoneSheet
-        zoneId={zoneId}
-        view={view}
-        snapshot={snapshot}
-        rec={recs.find((r) => r.zone.id === zoneId)}
-        sel={sel}
-        now={now ?? 0}
-        navApp={settings.navApp}
-        onSelect={setStep}
-        onClose={() => setZoneId(null)}
-      />
       <SettingsSheet
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}

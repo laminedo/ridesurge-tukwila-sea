@@ -1,22 +1,23 @@
 import { buildForecast } from './forecast/surge';
+import { SEATTLE } from './regions/seattle';
+import { regionInfo, type Region } from './regions/types';
 import { buildAirportRunFeed } from './sim/departures';
 import { buildEventFeed } from './sim/events';
 import { buildFlightFeed } from './sim/flights';
-import { DAY, pacificOffsetMs } from './time';
+import { DAY, zoneOffsetMs } from './time';
 import type { Snapshot } from './types';
 
-export { pacificOffsetMs };
-
-/** Everything the app needs for one moment, in a single payload it can cache offline. */
-export async function buildSnapshot(at: number): Promise<Snapshot> {
-  const offset = pacificOffsetMs(at);
+/** Everything the app needs for one moment in one region, in a single payload it can cache offline. */
+export async function buildSnapshot(at: number, region: Region = SEATTLE): Promise<Snapshot> {
+  const offset = zoneOffsetMs(at, region.timeZone);
   return {
     generatedAt: at,
     simulated: true,
-    flights: buildFlightFeed(at, offset),
-    airportRuns: buildAirportRunFeed(at, offset),
-    events: buildEventFeed(at, offset),
-    forecast: await buildForecast(at, offset),
+    region: regionInfo(region),
+    flights: buildFlightFeed(region, at, offset),
+    airportRuns: buildAirportRunFeed(region, at, offset),
+    events: buildEventFeed(region, at, offset),
+    forecast: await buildForecast(region, at, offset),
   };
 }
 
@@ -38,15 +39,19 @@ export function resolveAt(request: Request): { at: number } | { error: string } 
   return { at };
 }
 
-/** Shared GET handler: validate `?at=`, build the payload, never cache it. */
+/**
+ * Shared GET handler: validate `?at=`, build the payload, never cache it.
+ * The HTTP API serves the curated Seattle market; regions generated around a
+ * driver are computed on the device, so a location never has to be sent here.
+ */
 export async function respond<T>(
   request: Request,
-  build: (at: number, offset: number) => T | Promise<T>,
+  build: (region: Region, at: number, offset: number) => T | Promise<T>,
 ): Promise<Response> {
   const resolved = resolveAt(request);
   if ('error' in resolved) {
     return Response.json({ error: resolved.error }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
   }
-  const body = await build(resolved.at, pacificOffsetMs(resolved.at));
+  const body = await build(SEATTLE, resolved.at, zoneOffsetMs(resolved.at, SEATTLE.timeZone));
   return Response.json(body, { headers: { 'Cache-Control': 'no-store' } });
 }

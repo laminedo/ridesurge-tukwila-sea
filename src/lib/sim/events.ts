@@ -9,21 +9,15 @@
  */
 import { between, gauss, pick, seeded } from '../rng';
 import { HOUR, MIN, dayStart, floorTo, localClock, localDate } from '../time';
+import type { DayContext, Program, Region, Venue } from '../regions/types';
 import type { EventFeed, EventKind, EventStatus, VenueEvent, ZoneId } from '../types';
 import { clamp } from '../util';
 
 export const EVENT_BUCKET_MIN = 5;
 const BUCKET = EVENT_BUCKET_MIN * MIN;
 
-interface Venue {
-  name: string;
-  zoneId: ZoneId;
-  capacity: number;
-  spill: Partial<Record<ZoneId, number>>;
-  spot: string;
-}
-
-const VENUES = {
+/** Seattle-area venues. Other regions build theirs from the bundled venue table. */
+export const SEATTLE_VENUES = {
   lumen: { name: 'Lumen Field', zoneId: 'SODO', capacity: 68740, spill: { SODO: 0.62, DTN: 0.28, CAP: 0.1 }, spot: 'sodo-holgate' },
   tmobile: { name: 'T-Mobile Park', zoneId: 'SODO', capacity: 47929, spill: { SODO: 0.7, DTN: 0.22, CAP: 0.08 }, spot: 'sodo-holgate' },
   wamu: { name: 'WaMu Theater', zoneId: 'SODO', capacity: 7200, spill: { SODO: 0.75, DTN: 0.25 }, spot: 'sodo-station' },
@@ -60,45 +54,16 @@ const VENUES = {
   dreamGirls: { name: 'Dream Girls at SoDo', zoneId: 'SODO', capacity: 300, spill: { SODO: 0.9, DTN: 0.1 }, spot: 'sodo-holgate' },
   kittens: { name: 'Kittens Cabaret', zoneId: 'SODO', capacity: 180, spill: { SODO: 1 }, spot: 'sodo-georgetown' },
 } satisfies Record<string, Venue>;
-type VenueId = keyof typeof VENUES;
 
-interface DayContext {
-  dow: number;
-  month: number;
-  date: number;
-}
-
-interface Program {
-  id: string;
-  venue: VenueId;
-  kind: EventKind;
-  tag: string;
-  titles: readonly string[];
-  /** Chance the venue hosts this on a given day. */
-  chance: (c: DayContext) => number;
-  /** Candidate local start hours (decimal). */
-  starts: (c: DayContext) => readonly number[];
-  durationMin: readonly [number, number];
-  /** Attendance as a share of capacity. */
-  fill: readonly [number, number];
-  /** Spread of the dismissal time around schedule, minutes. */
-  sigmaMin: number;
-  capacity?: number;
-  /** Override for crowds that trickle out during the event (cruise disembarkation). */
-  egress?: { earlyMin: number; clearMin: number };
-  /** Late-night venues empty toward a hard closing time instead of after a final whistle. */
-  closing?: boolean;
-}
-
-const inMonths = (month: number, from: number, to: number) =>
+export const inMonths = (month: number, from: number, to: number) =>
   from <= to ? month >= from && month <= to : month >= from || month <= to;
 const cruiseSeason = ({ month, date }: DayContext) =>
   (month > 4 && month < 10) || (month === 4 && date >= 15) || (month === 10 && date <= 20);
 const evening = () => [19.5] as const;
-const weekend = ({ dow }: DayContext) => dow === 5 || dow === 6;
+export const weekend = ({ dow }: DayContext) => dow === 5 || dow === 6;
 
 /** A touring-band room: doors in the evening, out before midnight. */
-const liveRoom = (id: string, venue: VenueId, busy: number, quiet: number, titles: readonly string[]): Program => ({
+export const liveRoom = (id: string, venue: string, busy: number, quiet: number, titles: readonly string[]): Program => ({
   id, venue, kind: 'concert', tag: 'Live music', titles,
   chance: ({ dow }) => (dow >= 3 && dow <= 6 ? busy : quiet),
   starts: () => [20, 20.5],
@@ -106,7 +71,7 @@ const liveRoom = (id: string, venue: VenueId, busy: number, quiet: number, title
 });
 
 /** A dance club: open from `opens` until last call at `closes` (hours past midnight count from 24). */
-const club = (id: string, venue: VenueId, tag: string, opens: number, closes: number, chance: Program['chance']): Program => ({
+export const club = (id: string, venue: string, tag: string, opens: number, closes: number, chance: Program['chance']): Program => ({
   id, venue, kind: 'nightlife', tag, titles: [tag === 'Showgirls' ? 'Open until close' : 'Club night'],
   chance,
   starts: () => [opens],
@@ -115,7 +80,7 @@ const club = (id: string, venue: VenueId, tag: string, opens: number, closes: nu
 });
 
 /** Listed in priority order: an earlier program claims the venue for the day. */
-const PROGRAMS: readonly Program[] = [
+export const SEATTLE_PROGRAMS: readonly Program[] = [
   {
     id: 'seahawks', venue: 'lumen', kind: 'sports', tag: 'NFL',
     titles: ['Seahawks vs 49ers', 'Seahawks vs Rams', 'Seahawks vs Cardinals', 'Seahawks vs Packers', 'Seahawks vs Cowboys', 'Seahawks vs Vikings'],
@@ -343,22 +308,22 @@ function egressCurve(end: number, attendance: number, requests: number, override
 }
 
 /** Every event dismissing on a local day. */
-export function eventsForDay(day: number, offset: number): RawEvent[] {
-  const key = `${day}:${offset}`;
+export function eventsForDay(region: Region, day: number, offset: number): RawEvent[] {
+  const key = `${region.id}:${day}:${offset}`;
   const hit = dayCache.get(key);
   if (hit) return hit;
 
   const start = dayStart(day, offset);
   const ctx: DayContext = { dow: localClock(start, offset).dow, ...localDate(day) };
-  const booked = new Set<VenueId>();
+  const booked = new Set<string>();
   const out: RawEvent[] = [];
 
-  for (const program of PROGRAMS) {
-    const r = seeded('event', day, program.id);
+  for (const program of region.programs) {
+    const r = seeded('event', region.id, day, program.id);
     if (r() >= program.chance(ctx) || booked.has(program.venue)) continue;
     booked.add(program.venue);
 
-    const venue: Venue = VENUES[program.venue];
+    const venue: Venue = region.venues[program.venue];
     const eventStart = start + pick(r, program.starts(ctx)) * HOUR;
     const scheduledEnd = eventStart + between(r, ...program.durationMin) * MIN;
     // Overtime, extra innings and encores move the real dismissal off schedule.
@@ -390,18 +355,18 @@ export function eventsForDay(day: number, offset: number): RawEvent[] {
   }
 
   out.sort((a, b) => a.end - b.end);
-  if (dayCache.size >= 24) dayCache.delete(dayCache.keys().next().value as string);
+  if (dayCache.size >= 40) dayCache.delete(dayCache.keys().next().value as string);
   dayCache.set(key, out);
   return out;
 }
 
-function eventsBetween(from: number, to: number, offset: number): RawEvent[] {
+function eventsBetween(region: Region, from: number, to: number, offset: number): RawEvent[] {
   // Egress tails run past midnight, so look one day back as well.
   const firstDay = localClock(from, offset).day - 1;
   const lastDay = localClock(to, offset).day;
   const out: RawEvent[] = [];
   for (let day = firstDay; day <= lastDay; day++) {
-    for (const e of eventsForDay(day, offset)) {
+    for (const e of eventsForDay(region, day, offset)) {
       if (e.curveStart + e.curve.length * BUCKET > from && e.curveStart < to) out.push(e);
     }
   }
@@ -410,13 +375,14 @@ function eventsBetween(from: number, to: number, offset: number): RawEvent[] {
 
 /** Egress ride requests per zone per step over a window (forecast covariate). */
 export function eventZoneSeries(
+  region: Region,
   start: number,
   stepMs: number,
   steps: number,
   offset: number,
 ): Partial<Record<ZoneId, number[]>> {
   const series: Partial<Record<ZoneId, number[]>> = {};
-  for (const e of eventsBetween(start, start + steps * stepMs, offset)) {
+  for (const e of eventsBetween(region, start, start + steps * stepMs, offset)) {
     e.curve.forEach((requests, k) => {
       const i = Math.floor((e.curveStart + k * BUCKET - start) / stepMs);
       if (i < 0 || i >= steps) return;
@@ -434,8 +400,8 @@ function statusOf(e: RawEvent, now: number): EventStatus {
   return now < e.egressEnd ? 'egress' : 'cleared';
 }
 
-export function buildEventFeed(now: number, offset: number): EventFeed {
-  const events = eventsBetween(now - 20 * MIN, now + 18 * HOUR, offset)
+export function buildEventFeed(region: Region, now: number, offset: number): EventFeed {
+  const events = eventsBetween(region, now - 20 * MIN, now + 18 * HOUR, offset)
     // A club that has not opened yet only matters on the night itself.
     .filter((e) => e.egressEnd > now - 20 * MIN && e.start < now + (e.kind === 'nightlife' ? 12 : 18) * HOUR)
     .sort((a, b) => a.end - b.end)

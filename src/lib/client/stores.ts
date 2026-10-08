@@ -130,25 +130,46 @@ export function setTab(tab: Tab) {
 
 /* ---------- Settings (persisted on the device) ---------- */
 
+/** Where the app builds its market: the curated Seattle one, around the device, or around a chosen city. */
+export type Area =
+  | { mode: 'seattle' }
+  | { mode: 'gps' }
+  | { mode: 'city'; name: string; state: string; lat: number; lng: number };
+
 export interface Settings {
   navApp: NavApp;
-  origin: 'home' | 'gps';
+  area: Area;
 }
 
 const SETTINGS_KEY = 'ridesurge:settings:v1';
-const DEFAULT_SETTINGS: Settings = { navApp: 'google', origin: 'home' };
+const DEFAULT_SETTINGS: Settings = { navApp: 'google', area: { mode: 'seattle' } };
 const settingsListeners = new Set<Listener>();
 let settings = DEFAULT_SETTINGS;
 let settingsLoaded = false;
+
+function parseArea(saved: { area?: Partial<Area> & Record<string, unknown>; origin?: unknown }): Area {
+  const area = saved.area;
+  if (area?.mode === 'gps' || saved.origin === 'gps') return { mode: 'gps' };
+  if (
+    area?.mode === 'city' &&
+    typeof area.name === 'string' &&
+    typeof area.state === 'string' &&
+    typeof area.lat === 'number' &&
+    typeof area.lng === 'number'
+  ) {
+    return { mode: 'city', name: area.name, state: area.state, lat: area.lat, lng: area.lng };
+  }
+  return { mode: 'seattle' };
+}
 
 function readSettings(): Settings {
   if (!settingsLoaded) {
     settingsLoaded = true;
     try {
-      const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as Partial<Settings>;
+      const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as Parameters<typeof parseArea>[0] & { navApp?: unknown };
       settings = {
         navApp: saved.navApp === 'waze' || saved.navApp === 'apple' ? saved.navApp : 'google',
-        origin: saved.origin === 'gps' ? 'gps' : 'home',
+        area: parseArea(saved),
       };
     } catch {
       // Private mode or corrupt storage: fall back to defaults.
@@ -177,27 +198,43 @@ export const useSettings = () => useSyncExternalStore(subscribeSettings, readSet
 /* ---------- Device position ---------- */
 
 export interface Geolocation {
+  /** Latest fix, for drive times. */
   position: LatLng | null;
+  /**
+   * The point the driver's market is built around. It only moves once the
+   * driver is well away from it, so the radar does not reshuffle on every fix.
+   */
+  anchor: LatLng | null;
   error: string | null;
 }
 
+/** Re-anchor after roughly this many miles from the last anchor. */
+const REANCHOR_DEG = 0.25;
+
 /** Watches the device position while `enabled`; asks for permission on first use. */
 export function useGeolocation(enabled: boolean): Geolocation {
-  const [state, setState] = useState<Geolocation>({ position: null, error: null });
+  const [state, setState] = useState<Geolocation>({ position: null, anchor: null, error: null });
 
   useEffect(() => {
     if (!enabled) return;
     if (!('geolocation' in navigator)) {
-      queueMicrotask(() => setState({ position: null, error: 'This device does not share its location.' }));
+      queueMicrotask(() => setState({ position: null, anchor: null, error: 'This device does not share its location.' }));
       return;
     }
     const watch = navigator.geolocation.watchPosition(
-      ({ coords }) => setState({ position: { lat: coords.latitude, lng: coords.longitude }, error: null }),
+      ({ coords }) => {
+        const position = { lat: coords.latitude, lng: coords.longitude };
+        setState((previous) => {
+          const { anchor } = previous;
+          const moved = !anchor || Math.abs(anchor.lat - position.lat) > REANCHOR_DEG || Math.abs(anchor.lng - position.lng) > REANCHOR_DEG * 1.4;
+          return { position, anchor: moved ? position : anchor, error: null };
+        });
+      },
       (error) =>
-        setState({
-          position: null,
+        setState((previous) => ({
+          ...previous,
           error: error.code === error.PERMISSION_DENIED ? 'Location permission was declined.' : 'Location is unavailable right now.',
-        }),
+        })),
       { enableHighAccuracy: false, maximumAge: 60_000, timeout: 20_000 },
     );
     return () => navigator.geolocation.clearWatch(watch);

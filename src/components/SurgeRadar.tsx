@@ -7,7 +7,7 @@ import { heatColor, heatInk } from '@/lib/heat';
 import type { Zone, ZoneId, ZoneStep } from '@/lib/types';
 import { clamp } from '@/lib/util';
 import type { View } from '@/lib/view';
-import { ZONES } from '@/lib/zones';
+import { useRegion } from './RegionContext';
 import { Card, HeatLegend, cx } from './ui';
 
 const SWEEP_SECONDS = 7;
@@ -75,8 +75,23 @@ function Blip({
   );
 }
 
-/** Schematic backdrop: Puget Sound, Lake Washington and the freeway spines for orientation. */
-function Scope() {
+/** Backdrop for a generated region: range rings and a north marker, with the driver at the centre. */
+function PlainScope() {
+  return (
+    <svg viewBox="0 0 100 100" className="absolute inset-0 size-full" aria-hidden>
+      {[16, 32, 48].map((r) => (
+        <circle key={r} cx="50" cy="50" r={r} fill="none" stroke="var(--color-line)" strokeWidth="0.3" />
+      ))}
+      <path d="M50 2V98M2 50H98" stroke="var(--color-line)" strokeWidth="0.2" />
+      <text x="51.5" y="6" fontSize="2.4" fontWeight="600" fill="var(--color-fg-3)">
+        N
+      </text>
+    </svg>
+  );
+}
+
+/** Seattle backdrop: Puget Sound, Lake Washington and the freeway spines for orientation. */
+function SeattleScope() {
   const road = { fill: 'none', stroke: 'var(--color-line-2)', strokeWidth: 0.5, strokeLinecap: 'round' } as const;
   const label = { fontSize: 2.4, fill: 'var(--color-fg-3)', opacity: 0.75 } as const;
   return (
@@ -167,6 +182,8 @@ export function SurgeRadar({
   /** Zone the driver is in (or based in). */
   hereZoneId: ZoneId;
 }) {
+  const { info } = useRegion();
+
   return (
     <Card className="flex flex-col p-3">
       <div className="flex items-baseline justify-between px-1">
@@ -178,10 +195,10 @@ export function SurgeRadar({
 
       <div className="@container relative mx-auto mt-3 aspect-square w-full max-w-[520px] md:my-auto">
         <div className="absolute inset-0 overflow-hidden rounded-full border border-line-2 bg-[radial-gradient(circle,#0f1a27_0%,#080d14_100%)]">
-          <Scope />
+          {info.id === 'seattle' ? <SeattleScope /> : <PlainScope />}
           <div className="radar-sweep absolute inset-0 rounded-full" style={{ '--sweep': `${SWEEP_SECONDS}s` } as CSSProperties} aria-hidden />
         </div>
-        {ZONES.map((zone) => (
+        {info.zones.map((zone) => (
           <Blip key={zone.id} zone={zone} steps={view.byZone[zone.id]} sel={sel} here={zone.id === hereZoneId} onZone={onZone} />
         ))}
       </div>
