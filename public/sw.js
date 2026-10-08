@@ -75,9 +75,13 @@ async function cacheFirst(request) {
 
 async function appShell(request) {
   const shell = await caches.open(SHELL);
+  const isRoot = new URL(request.url).pathname === ROOT;
   try {
-    const response = await fetch(request);
-    if (response.ok && new URL(request.url).pathname === ROOT) shell.put(ROOT, response.clone());
+    // Always revalidate the shell with the server, and ask for the bare path whatever the query
+    // string. A copy from the browser's HTTP cache can point at bundles a newer deploy has removed,
+    // which would leave a blank page until that copy expires.
+    const response = isRoot ? await fetch(ROOT, { cache: 'no-cache' }) : await fetch(request);
+    if (response.ok && isRoot) shell.put(ROOT, response.clone());
     return response;
   } catch {
     return (await shell.match(ROOT)) || (await shell.match(OFFLINE)) || Response.error();
