@@ -130,7 +130,7 @@ export function setTab(tab: Tab) {
 
 /* ---------- Settings (persisted on the device) ---------- */
 
-/** Where the app builds its market: the curated Seattle one, around the device, or around a chosen city. */
+/** Where the app builds its market: around the device (the default), the curated Seattle one, or around a chosen city. */
 export type Area =
   | { mode: 'seattle' }
   | { mode: 'gps' }
@@ -142,14 +142,15 @@ export interface Settings {
 }
 
 const SETTINGS_KEY = 'ridesurge:settings:v1';
-const DEFAULT_SETTINGS: Settings = { navApp: 'google', area: { mode: 'seattle' } };
+/** Stored with the settings. Version 2 made the driver's own location the starting area. */
+const SETTINGS_VERSION = 2;
+const DEFAULT_SETTINGS: Settings = { navApp: 'google', area: { mode: 'gps' } };
 const settingsListeners = new Set<Listener>();
 let settings = DEFAULT_SETTINGS;
 let settingsLoaded = false;
 
-function parseArea(saved: { area?: Partial<Area> & Record<string, unknown>; origin?: unknown }): Area {
+export function parseArea(saved: { area?: Partial<Area> & Record<string, unknown>; v?: unknown }): Area {
   const area = saved.area;
-  if (area?.mode === 'gps' || saved.origin === 'gps') return { mode: 'gps' };
   if (
     area?.mode === 'city' &&
     typeof area.name === 'string' &&
@@ -159,7 +160,10 @@ function parseArea(saved: { area?: Partial<Area> & Record<string, unknown>; orig
   ) {
     return { mode: 'city', name: area.name, state: area.state, lat: area.lat, lng: area.lng };
   }
-  return { mode: 'seattle' };
+  // Seattle used to be the starting area, so an older saved "seattle" was never a choice.
+  // Only one saved since then keeps the app off the device's location.
+  if (area?.mode === 'seattle' && saved.v === SETTINGS_VERSION) return { mode: 'seattle' };
+  return { mode: 'gps' };
 }
 
 function readSettings(): Settings {
@@ -181,7 +185,7 @@ function readSettings(): Settings {
 export function updateSettings(patch: Partial<Settings>) {
   settings = { ...readSettings(), ...patch };
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, v: SETTINGS_VERSION }));
   } catch {
     // Storage unavailable: the choice still applies for this session.
   }
@@ -198,42 +202,94 @@ export const useSettings = () => useSyncExternalStore(subscribeSettings, readSet
 /* ---------- Device position ---------- */
 
 export interface Geolocation {
-  /** Latest fix, for drive times. */
+  /** Latest fix from this session, for drive times and the "you are here" mark. */
   position: LatLng | null;
   /**
    * The point the driver's market is built around. It only moves once the
    * driver is well away from it, so the radar does not reshuffle on every fix.
    */
   anchor: LatLng | null;
+  /**
+   * The driver's neighbourhood: follows the position in steps of about two
+   * miles. Weather and the place name use it, so they keep up with the driver
+   * without a new lookup at every fix.
+   */
+  near: LatLng | null;
+  /** True while no fix has ever been seen on this device and none has failed yet. */
+  waiting: boolean;
   error: string | null;
 }
 
-/** Re-anchor after roughly this many miles from the last anchor. */
+/** Re-anchor the market after roughly 17 miles from the last anchor. */
 const REANCHOR_DEG = 0.25;
+/** Move the neighbourhood after roughly two miles. */
+const NEAR_DEG = 0.03;
+/** The last neighbourhood seen, so the next launch starts in the right city before the first fix. */
+const POSITION_KEY = 'ridesurge:position:v1';
+
+const NO_POSITION: Geolocation = { position: null, anchor: null, near: null, waiting: false, error: null };
+
+const movedBy = (from: LatLng | null, to: LatLng, degrees: number) =>
+  !from || Math.abs(from.lat - to.lat) > degrees || Math.abs(from.lng - to.lng) > degrees * 1.4;
+
+function savedPosition(): LatLng | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(POSITION_KEY) ?? 'null') as Partial<LatLng> | null;
+    return typeof saved?.lat === 'number' && typeof saved.lng === 'number' ? { lat: saved.lat, lng: saved.lng } : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Watches the device position while `enabled`; asks for permission on first use. */
 export function useGeolocation(enabled: boolean): Geolocation {
-  const [state, setState] = useState<Geolocation>({ position: null, anchor: null, error: null });
+  const [state, setState] = useState<Geolocation>(NO_POSITION);
 
   useEffect(() => {
     if (!enabled) return;
     if (!('geolocation' in navigator)) {
-      queueMicrotask(() => setState({ position: null, anchor: null, error: 'This device does not share its location.' }));
+      queueMicrotask(() => setState({ ...NO_POSITION, error: 'This device does not share its location.' }));
       return;
     }
+    // Start from where this device was last time; the first fix corrects it within seconds.
+    queueMicrotask(() =>
+      setState((previous) => {
+        if (previous.anchor) return previous;
+        const last = savedPosition();
+        return last ? { ...previous, anchor: last, near: last } : { ...previous, waiting: true };
+      }),
+    );
     const watch = navigator.geolocation.watchPosition(
       ({ coords }) => {
         const position = { lat: coords.latitude, lng: coords.longitude };
         setState((previous) => {
-          const { anchor } = previous;
-          const moved = !anchor || Math.abs(anchor.lat - position.lat) > REANCHOR_DEG || Math.abs(anchor.lng - position.lng) > REANCHOR_DEG * 1.4;
-          return { position, anchor: moved ? position : anchor, error: null };
+          // A stale starting point is replaced by the first real fix, however close it is.
+          const first = !previous.position;
+          const near = first || movedBy(previous.near, position, NEAR_DEG) ? position : previous.near;
+          if (near !== previous.near) {
+            try {
+              localStorage.setItem(POSITION_KEY, JSON.stringify(near));
+            } catch {
+              // Storage unavailable: the next launch simply waits for a fix.
+            }
+          }
+          return {
+            position,
+            anchor: movedBy(previous.anchor, position, REANCHOR_DEG) ? position : previous.anchor,
+            near,
+            waiting: false,
+            error: null,
+          };
         });
       },
       (error) =>
         setState((previous) => ({
           ...previous,
-          error: error.code === error.PERMISSION_DENIED ? 'Location permission was declined.' : 'Location is unavailable right now.',
+          waiting: false,
+          error:
+            error.code === error.PERMISSION_DENIED
+              ? 'Location is turned off for this app.'
+              : 'Your location is not available right now.',
         })),
       { enableHighAccuracy: false, maximumAge: 60_000, timeout: 20_000 },
     );

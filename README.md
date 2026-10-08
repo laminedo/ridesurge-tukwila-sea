@@ -36,11 +36,15 @@ The service worker only registers in production builds, so test offline behaviou
 
 ## Works where you drive
 
-Tap the area under the app name (or open Settings) to choose where the market is built:
+The app starts from **your own location**. The first time it opens, your phone or tablet asks whether RideSurge may use its GPS; tap Allow. From then on the radar map, the weather, the drive times and the best move all follow where you are, and the app remembers your last area so the next launch starts in the right place.
 
+Tap the area under the app name (or open Settings) to choose something else:
+
+- **My location** (the default) builds a market around the device. If you are within about 45 miles of Seattle you get the hand-tuned one.
 - **Seattle** is the hand-tuned market: 21 named zones, real staging spots, more than thirty venues and Sea-Tac's carrier mix.
-- **My location** asks the browser for your position and builds a market around it. If you are within about 45 miles of Seattle you get the hand-tuned one.
 - **Another city** lets you search any US city of 5,000 people or more.
+
+If location is declined or unavailable, the app says so and shows the last area the device was in, or Seattle–Tacoma.
 
 Outside Seattle the market is generated on the device from data bundled with the app (`src/lib/regions`):
 
@@ -49,7 +53,7 @@ Outside Seattle the market is generated on the device from data bundled with the
 - **Venues** are the NFL, MLB, NBA, NHL and MLS stadiums and arenas, with home games in season and touring shows, plus a generic bar district and convention centre for larger cities.
 - **Times** are shown in the area's own time zone.
 
-Building your area never sends your location anywhere: nothing is looked up online, and the HTTP API only serves the Seattle market. (The weather lookup sends a rounded area centre to Open-Meteo.) A generated market is coarser than Seattle's. Staging spots are town centres and the venues themselves, and local clubs, theatres and college venues are not included.
+Building your area never sends your location anywhere: nothing is looked up online, and the HTTP API only serves the Seattle market. Two things do go out. The weather lookup sends your position rounded to about three miles to Open-Meteo, and the radar's street map loads its map pieces from OpenFreeMap, which can therefore tell which part of the map is on screen. A generated market is coarser than Seattle's. Staging spots are town centres and the venues themselves, and local clubs, theatres and college venues are not included.
 
 ## What is on each screen
 
@@ -57,7 +61,7 @@ The layout follows the screen. Phones get one topic per tab with a bottom tab ba
 
 | Tab | What it answers |
 | --- | --- |
-| **Radar** (Overview on wide screens) | The best move right now (zone, peak multiplier, when to leave, one-tap navigation) and a surge radar of all zones. Drag the slider or press play to move through the next three hours. A ring around a blip is the peak coming within the hour. |
+| **Radar** (Overview on wide screens) | The best move right now (zone, peak multiplier, when to leave, one-tap navigation) and a surge radar drawn on a street map of where you are (see below). Drag the slider or press play to move through the next three hours. A ring around a blip is the peak coming within the hour. |
 | **Heat grid** | Surge multiplier for 21 zones, from Federal Way to Shoreline and West Seattle to Redmond, in 15-minute steps. Tap a cell for demand, driver capacity and what is driving it. |
 | **Flights** | Ride requests by touchdown time against the same riders at the curb 20 to 35 minutes later, upcoming waves with a leave-by time, and the arrivals feeding them. **Rides to the airport** shows how many riders are leaving home for Sea-Tac and which neighbourhoods they start in. |
 | **Events** | Each venue's estimated dismissal time, its egress curve and where to stage. Filter to clubs and late night for closing-time rushes at the nightclubs, live-music rooms and showgirls clubs. |
@@ -66,15 +70,26 @@ The layout follows the screen. Phones get one topic per tab with a bottom tab ba
 
 Settings holds the navigation app, whether drive times start from the Tukwila base or your location (kept on the device), and a simulation clock for rehearsing moments such as Friday at 10:30 PM or Saturday bar close.
 
+## The radar map
+
+The radar is a real street map (OpenFreeMap, drawn from OpenStreetMap data) centred on the driver.
+
+- **You** are the pulsing dot. Dashed rings mark 5 and 10 miles from you.
+- **Zones** are the round marks, coloured low to high, each with its surge multiplier or ride requests. A star marks the best move, and the map opens framed around you, the zones near you and that best move.
+- **Small dots** are zones too close together to label at the current zoom. Zoom in, or tap one.
+- **Buttons**: centre on me, show every zone, zoom in and out. On a touch screen one finger scrolls the page and two fingers move the map.
+
+The map needs a connection (and WebGL). Without one, the radar falls back to the original sketch, which lays the zones out by compass direction and works offline. The code is in `src/components/RadarMap.tsx`, with the framing and decluttering maths in `src/lib/mapview.ts`.
+
 ## High and low at a glance
 
 Every zone is coloured on one ramp: cool blue is low, through violet and red, to bright yellow for the highest. The **Surge / Demand** switch on the radar and heat grid chooses what the colour means: the price multiplier, or how busy a zone is compared with the busiest one. Each mark also carries its number and a Low, Medium, High or Very high level, so nothing depends on colour alone.
 
 ## Weather
 
-The **Weather** tab shows the live forecast for your area from [Open-Meteo](https://open-meteo.com/): conditions now, the next 24 hours hour by hour, the coming days, and what it means for driving (rain about to start, snow, ice, strong wind, fog, heat). A marker appears on the tab when the next few hours call for a change of plan.
+The **Weather** tab shows the live forecast for where you are from [Open-Meteo](https://open-meteo.com/): conditions now, the next 24 hours hour by hour, the coming days, and what it means for driving (rain about to start, snow, ice, strong wind, fog, heat). A marker appears on the tab when the next few hours call for a change of plan.
 
-This is the one feed in the app that is real rather than simulated. It is shown as information only: the simulated surge numbers do not take weather into account. To fetch it, the app sends the centre of your area, rounded to about three miles, to Open-Meteo; nothing else leaves the device.
+This is the one feed in the app that is real rather than simulated. It is shown as information only: the simulated surge numbers do not take weather into account. With location on, the forecast follows the driver: it is for the neighbourhood you are in and is looked up again once you have moved about two miles. Otherwise it is for the chosen city or the area's base. To fetch it, the app sends that position, rounded to about three miles, to Open-Meteo.
 
 ## How it works
 

@@ -107,6 +107,33 @@ input[type="range"] {
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
+/* The driver's own position on the map. */
+.you-pulse {
+  animation: you-pulse 2.2s ease-out infinite;
+}
+
+@keyframes you-pulse {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(4);
+  }
+}
+
+/* The map sits inside a card: keep its hint in the app's type. */
+.maplibregl-map {
+  font: inherit;
+}
+
+.maplibregl-cooperative-gesture-screen {
+  font-size: 13px;
+  padding: 1.5rem;
+  text-align: center;
+}
+
 @keyframes pulse-dot {
   50% {
     opacity: 0.35;
@@ -225,6 +252,7 @@ dialog.sheet::backdrop {
   .radar-sweep,
   .blip-echo::after,
   .pulse-dot,
+  .you-pulse,
   dialog.sheet[open] {
     animation: none;
   }

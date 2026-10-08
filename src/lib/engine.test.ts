@@ -1,15 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { surgeMultiplier, MAX_MULTIPLIER } from './forecast/surge';
 import { CONTEXT_STEPS, HORIZON_STEPS, emulateTimesFM, runForecast, type SeriesInput } from './forecast/timesfm';
-import { driveMinutes } from './geo';
+import { parseArea } from './client/stores';
+import { driveMinutes, haversineMi } from './geo';
 import { demandHeat, demandLevel, heatColor, surgeLevel } from './heat';
 import { hotelPickups } from './hotels';
+import { boundsOf, crowdedAt, nearbyPlaces, ringAround } from './mapview';
 import { rankZones } from './recommend';
 import { SEATTLE, resolveRegion } from './regions';
 import { LEAD_MAX, LEAD_MIN, airportRunTotals, buildAirportRunFeed, originShare } from './sim/departures';
 import { eventsForDay } from './sim/events';
 import { LAG_MAX, LAG_MIN, buildFlightFeed, flightsForDay, lagCdf, spreadCurb } from './sim/flights';
 import { buildSnapshot, resolveAt } from './snapshot';
+import { risingTo } from './view';
 import { DAY, HOUR, MIN, localClock, pacificOffsetMs, zoneOffsetMs } from './time';
 import { driverAdvice, parseWeather, skyOf } from './weather';
 import { HOME_BASE, STAGING_SPOTS, ZONES, defaultSpot } from './zones';
@@ -518,5 +521,56 @@ describe('weather', () => {
     const advice = driverAdvice(parseWeather(hoursOf(codes, chances, [], gusts), NOW));
     expect(advice[0].kind).toBe('snow');
     expect(advice.some((a) => a.kind === 'wind' && a.title.includes('42'))).toBe(true);
+  });
+});
+
+describe('radar map', () => {
+  const ballard = ZONES.find((z) => z.id === 'BAL') ?? ZONES[0];
+
+  it('frames the zones around the driver, never fewer than four', () => {
+    const near = nearbyPlaces(ballard, ZONES);
+    expect(near.length).toBeGreaterThanOrEqual(4);
+    expect(near.length).toBeLessThan(ZONES.length);
+    expect(near[0].id).toBe(ballard.id);
+    expect(near.every((z) => haversineMi(ballard, z) <= 7)).toBe(true);
+    // Out in the country everything is far away: still the four nearest.
+    expect(nearbyPlaces({ lat: 46.6, lng: -120.5 }, ZONES)).toHaveLength(4);
+
+    const [[west, south], [east, north]] = boundsOf(near)!;
+    expect(near.every((z) => z.lng >= west && z.lng <= east && z.lat >= south && z.lat <= north)).toBe(true);
+    expect(boundsOf([])).toBeNull();
+  });
+
+  it('draws range rings at the stated distance', () => {
+    const ring = ringAround(HOME_BASE, 5);
+    expect(ring[0]).toEqual(ring[ring.length - 1]);
+    for (const [lng, lat] of ring) expect(haversineMi(HOME_BASE, { lat, lng })).toBeCloseTo(5, 1);
+  });
+
+  it('shrinks crowded zones when zoomed out and gives every zone its label when zoomed in', () => {
+    const far = crowdedAt(ZONES, 8, 48);
+    expect(far.size).toBeGreaterThan(0);
+    // The first zone in priority order always keeps its full mark.
+    expect(far.has(ZONES[0].id)).toBe(false);
+    expect(crowdedAt(ZONES, 14, 48).size).toBe(0);
+  });
+
+  it('flags a zone as rising only for a real climb within the hour', () => {
+    const steps = [1.0, 1.1, 1.2, 1.6, 1.7, 1.1].map((mult) => ({ mult })) as Parameters<typeof risingTo>[0];
+    expect(risingTo(steps, 0)).toBe(1.7);
+    expect(risingTo(steps, 3)).toBeNull();
+  });
+});
+
+describe('starting area', () => {
+  const city = { mode: 'city', name: 'Dallas', state: 'TX', lat: 32.78, lng: -96.8 } as const;
+
+  it('starts from the device location, and keeps a deliberate choice', () => {
+    expect(parseArea({})).toEqual({ mode: 'gps' });
+    // "seattle" saved before location became the default was never chosen.
+    expect(parseArea({ area: { mode: 'seattle' } })).toEqual({ mode: 'gps' });
+    expect(parseArea({ area: { mode: 'seattle' }, v: 2 })).toEqual({ mode: 'seattle' });
+    expect(parseArea({ area: city })).toEqual(city);
+    expect(parseArea({ area: { mode: 'city', name: 'Nowhere' } })).toEqual({ mode: 'gps' });
   });
 });

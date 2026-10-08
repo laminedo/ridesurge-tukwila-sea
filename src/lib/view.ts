@@ -29,3 +29,12 @@ export function buildView(snapshot: Snapshot, nowIdx: number): View | null {
   }
   return { steps, byZone, stepMs: snapshot.forecast.stepMin * MIN, maxDemand };
 }
+
+/** A zone counts as rising when its peak in the next hour beats the shown value by this much. */
+const RISING_BY = 0.3;
+
+/** The highest multiplier in the hour after step `sel`, when it is enough of a climb to flag; otherwise `null`. */
+export function risingTo(steps: ZoneStep[], sel: number): number | null {
+  const ahead = steps.slice(sel + 1, sel + 5).reduce((max, s) => Math.max(max, s.mult), 0);
+  return ahead >= steps[sel].mult + RISING_BY ? ahead : null;
+}

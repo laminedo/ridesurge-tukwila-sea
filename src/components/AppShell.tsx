@@ -1,6 +1,6 @@
 'use client';
 
-import { CircleAlert, FlaskConical, History, MapPinOff, WifiOff } from 'lucide-react';
+import { CircleAlert, FlaskConical, History, LocateFixed, MapPinOff, WifiOff } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { STATIC_EXPORT } from '@/lib/client/env';
 import { setTab, useGeolocation, useNow, useOnline, useSettings, useTab, useWide } from '@/lib/client/stores';
@@ -73,10 +73,11 @@ export function AppShell() {
   // Colour zones by surge multiplier or by how busy they are; shared by the radar and the grid.
   const [metric, setMetric] = useState<Metric>('surge');
 
-  // Where the market is built: the curated one, around a chosen city, or around the device.
+  // Where the market is built: around the device (the default), around a chosen city, or the curated one.
   const { area } = settings;
-  const geolocation = useGeolocation(area.mode === 'gps');
-  const anchor = area.mode === 'gps' ? geolocation.anchor : area.mode === 'city' ? area : null;
+  const gps = area.mode === 'gps';
+  const geolocation = useGeolocation(gps);
+  const anchor = gps ? geolocation.anchor : area.mode === 'city' ? area : null;
   const anchorLat = anchor?.lat;
   const anchorLng = anchor?.lng;
   const spec = useMemo<AreaSpec>(
@@ -86,24 +87,36 @@ export function AppShell() {
 
   const { snapshot, error, loading, refresh } = useSnapshot(simOffset, spec);
   const region = snapshot?.region;
-  // Live weather for the area's centre. A rounded area is all the service is given.
-  const homeLat = region?.home.lat;
-  const homeLng = region?.home.lng;
-  const weatherCentre = useMemo(
-    () => (homeLat !== undefined && homeLng !== undefined ? { lat: homeLat, lng: homeLng } : null),
-    [homeLat, homeLng],
-  );
-  const { weather, error: weatherError } = useWeather(weatherCentre);
   const now = realNow === null ? null : realNow + simOffset;
 
-  // Drive times start from the driver when we know where they are, else from the area's base.
-  const live = area.mode === 'gps' ? geolocation.position : null;
-  const originLat = live?.lat ?? (area.mode === 'city' ? area.lat : region?.home.lat);
-  const originLng = live?.lng ?? (area.mode === 'city' ? area.lng : region?.home.lng);
+  // Drive times start from the driver when we know where they are; failing that from where this device
+  // was last seen, the chosen city, or the area's base.
+  const live = gps ? geolocation.position : null;
+  const near = gps ? geolocation.near : null;
+  const originLat = live?.lat ?? near?.lat ?? (area.mode === 'city' ? area.lat : region?.home.lat);
+  const originLng = live?.lng ?? near?.lng ?? (area.mode === 'city' ? area.lng : region?.home.lng);
   const origin = useMemo<LatLng | null>(
     () => (originLat !== undefined && originLng !== undefined ? { lat: originLat, lng: originLng } : null),
     [originLat, originLng],
   );
+
+  // Live weather for the driver's own neighbourhood when the device shares its position, else for the
+  // chosen city or the area's base. The service is only ever given a point rounded to about three miles.
+  const weatherLat = near?.lat ?? (area.mode === 'city' ? area.lat : region?.home.lat);
+  const weatherLng = near?.lng ?? (area.mode === 'city' ? area.lng : region?.home.lng);
+  const weatherCentre = useMemo(
+    () => (weatherLat !== undefined && weatherLng !== undefined ? { lat: weatherLat, lng: weatherLng } : null),
+    [weatherLat, weatherLng],
+  );
+  const { weather, error: weatherError } = useWeather(weatherCentre);
+  // What to call that spot: the zone the driver is in, the chosen city, or the area's base.
+  const weatherPlace = useMemo(() => {
+    if (!region) return '';
+    if (!weatherCentre || (!near && area.mode !== 'city')) return region.home.label;
+    const closest = region.zones.reduce((best, z) => (haversineMi(weatherCentre, z) < haversineMi(weatherCentre, best) ? z : best), region.zones[0]);
+    if (haversineMi(weatherCentre, closest) <= 5) return closest.name;
+    return area.mode === 'city' ? area.name : region.home.label;
+  }, [region, weatherCentre, near, area]);
 
   const nowIdx = snapshot && now !== null ? currentStep(snapshot, now) : 0;
   const view = useMemo(() => (snapshot ? buildView(snapshot, nowIdx) : null), [snapshot, nowIdx]);
@@ -140,7 +153,16 @@ export function AppShell() {
       <div className="flex min-h-dvh min-w-0 flex-1 flex-col">
       <Header
         now={now}
-        area={region?.name ?? (area.mode === 'city' ? `${area.name}, ${area.state}` : 'Seattle–Tacoma')}
+        area={
+          region
+            ? // With GPS on, lead with the driver's own zone.
+              near && weatherPlace && !region.name.includes(weatherPlace)
+              ? `${weatherPlace} · ${region.name}`
+              : region.name
+            : area.mode === 'city'
+              ? `${area.name}, ${area.state}`
+              : 'Seattle–Tacoma'
+        }
         health={health}
         ageMin={ageMs / MIN}
         simulating={simOffset !== 0}
@@ -150,11 +172,24 @@ export function AppShell() {
         onArea={openSettings}
       />
 
-      {area.mode === 'gps' && geolocation.error && (
+      {gps && geolocation.waiting && (
+        <Notice
+          icon={<LocateFixed className="pulse-dot size-4 text-accent" aria-hidden />}
+          title="Finding your location."
+          body="If your phone or tablet asks, tap Allow. Showing Seattle–Tacoma until then."
+          action="Pick a city"
+          onAction={openSettings}
+        />
+      )}
+      {gps && geolocation.error && !geolocation.position && (
         <Notice
           icon={<MapPinOff className="size-4 text-warning" aria-hidden />}
           title="No location."
-          body={`${geolocation.error} Showing Seattle–Tacoma instead.`}
+          body={`${geolocation.error} ${
+            geolocation.anchor
+              ? 'Showing the last area this device was in.'
+              : 'Showing Seattle–Tacoma instead. Allow location for this site in your browser settings, or pick a city.'
+          }`}
           action="Pick a city"
           onAction={openSettings}
         />
@@ -238,9 +273,22 @@ export function AppShell() {
             {tab === 'radar' && (
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {/* Live weather first: one line that says whether the sky will change the plan. */}
-                {weather && <WeatherCard weather={weather} onOpen={() => setTab('weather')} className="md:col-span-2 xl:col-span-3" />}
+                {weather && (
+                  <WeatherCard weather={weather} place={weatherPlace} onOpen={() => setTab('weather')} className="md:col-span-2 xl:col-span-3" />
+                )}
                 <BestMove recs={recs} view={view} now={now} navApp={settings.navApp} onZone={setZoneId} />
-                <SurgeRadar view={view} sel={sel} onSelect={setStep} onZone={setZoneId} hereZoneId={hereZoneId} metric={metric} onMetric={setMetric} />
+                <SurgeRadar
+                  view={view}
+                  sel={sel}
+                  onSelect={setStep}
+                  onZone={setZoneId}
+                  hereZoneId={hereZoneId}
+                  bestZoneId={recs[0]?.zone.id}
+                  origin={origin}
+                  live={live !== null}
+                  metric={metric}
+                  onMetric={setMetric}
+                />
                 {wide && (
                   <>
                     <HeatGrid
@@ -294,7 +342,8 @@ export function AppShell() {
                 weather={weather}
                 error={weatherError}
                 now={realNow ?? now}
-                area={snapshot.region.home.label}
+                area={weatherPlace || snapshot.region.home.label}
+                following={near !== null}
                 simulating={simOffset !== 0}
               />
             )}

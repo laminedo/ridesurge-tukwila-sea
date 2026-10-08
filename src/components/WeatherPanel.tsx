@@ -11,6 +11,7 @@ import {
   CloudMoon,
   CloudRain,
   CloudSun,
+  LocateFixed,
   Moon,
   Snowflake,
   Sun,
@@ -57,7 +58,18 @@ const ADVICE_ICON: Record<AdviceKind, LucideIcon> = {
 const degrees = (f: number) => `${Math.round(f)}°`;
 
 /** Compact weather for the overview: conditions now and the headline for drivers. */
-export function WeatherCard({ weather, onOpen, className }: { weather: Weather; onOpen: () => void; className?: string }) {
+export function WeatherCard({
+  weather,
+  place,
+  onOpen,
+  className,
+}: {
+  weather: Weather;
+  /** Where the forecast is for. */
+  place: string;
+  onOpen: () => void;
+  className?: string;
+}) {
   const { current } = weather;
   const [headline] = driverAdvice(weather);
   return (
@@ -68,7 +80,10 @@ export function WeatherCard({ weather, onOpen, className }: { weather: Weather; 
           <span className="block text-[15px] font-semibold">
             {degrees(current.tempF)} · {SKY_LABEL[current.sky]}
           </span>
-          <span className="block truncate text-[12px] text-fg-3">{headline?.title ?? 'Live weather'}</span>
+          <span className="block truncate text-[12px] text-fg-3">
+            {place && `${place} · `}
+            {headline?.title ?? 'Live weather'}
+          </span>
         </span>
         <ChevronRight className="size-4 shrink-0 text-fg-3" aria-hidden />
       </button>
@@ -82,13 +97,17 @@ export function WeatherPanel({
   error,
   now,
   area,
+  following,
   simulating,
 }: {
   weather: Weather | null;
   error: string | null;
   /** The real clock: weather ignores the simulation clock. */
   now: number;
+  /** Name of the place the forecast is for. */
   area: string;
+  /** True when the forecast follows the device's own position. */
+  following: boolean;
   simulating: boolean;
 }) {
   if (!weather) {
@@ -118,7 +137,10 @@ export function WeatherPanel({
               <Eyebrow>Weather now</Eyebrow>
               <p className="mt-1 text-[54px] font-semibold leading-[0.95] tracking-tighter">{degrees(current.tempF)}</p>
               <p className="mt-1 text-[15px] font-medium">{SKY_LABEL[current.sky]}</p>
-              <p className="truncate text-[12px] text-fg-3">{area}</p>
+              <p className="flex items-center gap-1 text-[12px] text-fg-3">
+                {following && <LocateFixed className="size-3 shrink-0 text-accent" aria-hidden />}
+                <span className="truncate">{following ? `Where you are: ${area}` : area}</span>
+              </p>
             </div>
             <SkyIcon sky={current.sky} day={current.day} className="size-20 shrink-0 text-fg-2" strokeWidth={1.3} />
           </div>
@@ -218,7 +240,7 @@ export function WeatherPanel({
           <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer" className="text-fg-2 underline">
             Open-Meteo.com
           </a>
-          , fetched {fmtClock(weather.fetchedAt)}. To get it, the app sends the centre of your area, rounded to about three miles, to
+          , fetched {fmtClock(weather.fetchedAt)}. To get it, the app sends {following ? 'your position' : 'the centre of your area'}, rounded to about three miles, to
           Open-Meteo. Forecasts can be wrong; check conditions before you drive.
         </p>
       </div>

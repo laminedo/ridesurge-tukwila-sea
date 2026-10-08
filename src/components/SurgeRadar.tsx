@@ -1,18 +1,18 @@
 'use client';
 
-import { ArrowUp, LocateFixed, Pause, Play } from 'lucide-react';
+import { ArrowUp, LocateFixed, Pause, Play, Star } from 'lucide-react';
 import { useEffect, useState, type CSSProperties } from 'react';
+import { useOnline } from '@/lib/client/stores';
 import { fmtClock, fmtMult, fmtRange, fmtShort } from '@/lib/format';
 import { heatColor, heatInk, type Metric } from '@/lib/heat';
-import type { Zone, ZoneId, ZoneStep } from '@/lib/types';
+import type { LatLng, Zone, ZoneId, ZoneStep } from '@/lib/types';
 import { clamp } from '@/lib/util';
-import type { View } from '@/lib/view';
+import { risingTo, type View } from '@/lib/view';
+import { RadarMap } from './RadarMap';
 import { useRegion } from './RegionContext';
 import { Card, HeatLegend, MetricSwitch, cx, heatOf } from './ui';
 
 const SWEEP_SECONDS = 7;
-/** A zone is flagged as rising when its peak in the next hour beats the shown value by this much. */
-const RISING_BY = 0.3;
 
 function Blip({
   zone,
@@ -32,8 +32,8 @@ function Blip({
   onZone: (zone: ZoneId) => void;
 }) {
   const current = steps[sel];
-  const ahead = steps.slice(sel + 1, sel + 5).reduce((max, s) => Math.max(max, s.mult), 0);
-  const rising = ahead >= current.mult + RISING_BY;
+  const ahead = risingTo(steps, sel);
+  const rising = ahead !== null;
   // Colour and number follow the chosen metric; the ring always warns of a coming surge.
   const { heat, label, level } = heatOf(current, metric, maxDemand);
 
@@ -46,7 +46,7 @@ function Blip({
     background: heatColor(heat),
     color: heatInk(heat),
     // A gap in the surface colour, then (if rising) a ring in the colour of what is coming.
-    boxShadow: `0 0 0 1.5px #0a1019${rising ? `, 0 0 0 4px ${heatColor(ahead)}` : ''}`,
+    boxShadow: `0 0 0 1.5px #0a1019${ahead !== null ? `, 0 0 0 4px ${heatColor(ahead)}` : ''}`,
     '--echo': heatColor(heat),
     '--echo-delay': `${(bearing / 360 - 1) * SWEEP_SECONDS}s`,
     '--sweep': `${SWEEP_SECONDS}s`,
@@ -57,7 +57,7 @@ function Blip({
       type="button"
       onClick={() => onZone(zone.id)}
       style={style}
-      aria-label={`${zone.name}: ${level.toLowerCase()}, ${metric === 'surge' ? fmtMult(current.mult) : `${current.demand} requests per 15 minutes`}${rising ? `, surge rising to ${fmtMult(ahead)} within the hour` : ''}`}
+      aria-label={`${zone.name}: ${level.toLowerCase()}, ${metric === 'surge' ? fmtMult(current.mult) : `${current.demand} requests per 15 minutes`}${ahead !== null ? `, surge rising to ${fmtMult(ahead)} within the hour` : ''}`}
       className={cx(
         'absolute flex aspect-square -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full',
         'transition-[background-color,box-shadow,width] duration-300 active:brightness-125',
@@ -78,6 +78,43 @@ function Blip({
         </span>
       )}
     </button>
+  );
+}
+
+/** The sketch radar: zones laid out by direction around the scope. Used when the street map cannot load. */
+function Scope({
+  view,
+  sel,
+  metric,
+  hereZoneId,
+  onZone,
+}: {
+  view: View;
+  sel: number;
+  metric: Metric;
+  hereZoneId: ZoneId;
+  onZone: (zone: ZoneId) => void;
+}) {
+  const { info } = useRegion();
+  return (
+    <div className="@container relative mx-auto mt-3 aspect-square w-full max-w-[520px] md:my-auto">
+      <div className="absolute inset-0 overflow-hidden rounded-full border border-line-2 bg-[radial-gradient(circle,#0f1a27_0%,#080d14_100%)]">
+        {info.id === 'seattle' ? <SeattleScope /> : <PlainScope />}
+        <div className="radar-sweep absolute inset-0 rounded-full" style={{ '--sweep': `${SWEEP_SECONDS}s` } as CSSProperties} aria-hidden />
+      </div>
+      {info.zones.map((zone) => (
+        <Blip
+          key={zone.id}
+          zone={zone}
+          steps={view.byZone[zone.id]}
+          sel={sel}
+          here={zone.id === hereZoneId}
+          metric={metric}
+          maxDemand={view.maxDemand}
+          onZone={onZone}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -180,6 +217,9 @@ export function SurgeRadar({
   onSelect,
   onZone,
   hereZoneId,
+  bestZoneId,
+  origin,
+  live,
   metric,
   onMetric,
 }: {
@@ -191,8 +231,17 @@ export function SurgeRadar({
   onMetric: (metric: Metric) => void;
   /** Zone the driver is in (or based in). */
   hereZoneId: ZoneId;
+  /** The top recommendation, starred on the map. */
+  bestZoneId: ZoneId | undefined;
+  /** Where the driver is, or where drive times start from. */
+  origin: LatLng | null;
+  /** True when `origin` comes from the device's GPS. */
+  live: boolean;
 }) {
-  const { info } = useRegion();
+  const online = useOnline();
+  // The street map needs a connection and WebGL; without them the sketch radar takes over.
+  const [mapFailed, setMapFailed] = useState(false);
+  const mapped = online && !mapFailed && origin !== null;
 
   return (
     <Card className="flex flex-col p-3">
@@ -207,24 +256,21 @@ export function SurgeRadar({
         <MetricSwitch metric={metric} onChange={onMetric} />
       </div>
 
-      <div className="@container relative mx-auto mt-3 aspect-square w-full max-w-[520px] md:my-auto">
-        <div className="absolute inset-0 overflow-hidden rounded-full border border-line-2 bg-[radial-gradient(circle,#0f1a27_0%,#080d14_100%)]">
-          {info.id === 'seattle' ? <SeattleScope /> : <PlainScope />}
-          <div className="radar-sweep absolute inset-0 rounded-full" style={{ '--sweep': `${SWEEP_SECONDS}s` } as CSSProperties} aria-hidden />
-        </div>
-        {info.zones.map((zone) => (
-          <Blip
-            key={zone.id}
-            zone={zone}
-            steps={view.byZone[zone.id]}
-            sel={sel}
-            here={zone.id === hereZoneId}
-            metric={metric}
-            maxDemand={view.maxDemand}
-            onZone={onZone}
-          />
-        ))}
-      </div>
+      {mapped ? (
+        <RadarMap
+          view={view}
+          sel={sel}
+          metric={metric}
+          origin={origin}
+          live={live}
+          hereZoneId={hereZoneId}
+          bestZoneId={bestZoneId}
+          onZone={onZone}
+          onFail={() => setMapFailed(true)}
+        />
+      ) : (
+        <Scope view={view} sel={sel} metric={metric} hereZoneId={hereZoneId} onZone={onZone} />
+      )}
 
       <Scrubber steps={view.steps} sel={sel} onSelect={onSelect} />
 
@@ -235,11 +281,35 @@ export function SurgeRadar({
             <span className="size-3 rounded-full border-2 border-[#f08a1c]" aria-hidden />
             Ring: surge peak within the hour
           </span>
-          <span className="flex items-center gap-1.5">
-            <LocateFixed className="size-3 text-accent" aria-hidden />
-            Your zone
-          </span>
+          {mapped ? (
+            <>
+              <span className="flex items-center gap-1.5">
+                <span className="size-3 rounded-full border-2 border-fg bg-accent" aria-hidden />
+                {live ? 'You' : 'Your start point'}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Star className="size-3 text-fg" fill="currentColor" strokeWidth={0} aria-hidden />
+                Best move
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 border-t border-dashed border-accent" aria-hidden />
+                5 and 10 miles away
+              </span>
+            </>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <LocateFixed className="size-3 text-accent" aria-hidden />
+              Your zone
+            </span>
+          )}
         </p>
+        {mapped ? (
+          <p className="mt-1.5 text-[11px] leading-snug text-fg-3">
+            Small dots are zones too close together to label: zoom in, or tap one. Move the map with two fingers.
+          </p>
+        ) : (
+          !online && <p className="mt-1.5 text-[11px] leading-snug text-fg-3">The street map needs a connection. This sketch works offline.</p>
+        )}
       </div>
     </Card>
   );

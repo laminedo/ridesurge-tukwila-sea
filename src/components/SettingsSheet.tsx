@@ -13,8 +13,8 @@ import { Sheet } from './Sheet';
 import { Segmented, cx } from './ui';
 
 const AREA_MODES = [
-  { id: 'seattle', label: 'Seattle' },
   { id: 'gps', label: 'My location' },
+  { id: 'seattle', label: 'Seattle' },
   { id: 'city', label: 'Another city' },
 ] as const;
 
@@ -138,7 +138,7 @@ export function SettingsSheet({
       <div className="space-y-5">
         <Section
           title="Your area"
-          hint="The radar, forecast and staging spots are built around this place. Seattle–Tacoma is hand-tuned; everywhere else in the US is built from data inside the app."
+          hint="The radar map, weather, forecast and staging spots follow this place. My location uses the GPS in your phone or tablet. Seattle–Tacoma is hand-tuned; everywhere else in the US is built from data inside the app."
         >
           <Segmented
             label="Area"
@@ -155,12 +155,15 @@ export function SettingsSheet({
             <p className="mt-2 flex items-start gap-2 text-[12px] leading-snug text-fg-2" role="status">
               <LocateFixed className="mt-px size-3.5 shrink-0 text-accent" aria-hidden />
               <span>
-                {geolocation.error
-                  ? `${geolocation.error} Showing Seattle–Tacoma until a location is available, or pick a city instead.`
+                {geolocation.error && !geolocation.position
+                  ? `${geolocation.error} Allow location for this site in your browser settings, or pick a city. Until then the app shows ${geolocation.anchor ? 'the last area this device was in' : 'Seattle–Tacoma'}.`
                   : geolocation.anchor
-                    ? `Scanning around your location${region ? `: ${region.name}` : ''}.`
-                    : 'Waiting for your location. Your browser may ask for permission.'}{' '}
-                <span className="text-fg-3">Your location stays on this device. Only the weather lookup sends anything: your area, rounded to about three miles.</span>
+                    ? `Following your location${region ? `: ${region.name}` : ''}.`
+                    : 'Waiting for your location. If your phone or tablet asks, tap Allow.'}{' '}
+                <span className="text-fg-3">
+                  Your exact location stays on this device. The weather lookup is given your position rounded to about three miles, and
+                  the map service can tell which part of the map you are looking at.
+                </span>
               </span>
             </p>
           )}
@@ -225,8 +228,15 @@ export function SettingsSheet({
             <div>
               <dt className="font-medium text-fg-2">Weather</dt>
               <dd className="text-fg-3">
-                Live forecast from Open-Meteo, not simulated. The app sends the centre of your area, rounded to about three miles, to
-                get it.
+                Live forecast from Open-Meteo, not simulated. It follows where you are: the app sends your position (or the centre of
+                your area), rounded to about three miles, to get it.
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-fg-2">Map</dt>
+              <dd className="text-fg-3">
+                Street map from OpenFreeMap, drawn from OpenStreetMap data. It needs a connection; offline, the radar switches to a
+                sketch that needs none.
               </dd>
             </div>
             <div>
