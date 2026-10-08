@@ -117,11 +117,17 @@ export function SettingsSheet({
           <dl className="space-y-2 text-[12px] leading-snug">
             <div>
               <dt className="font-medium text-fg-2">Flights</dt>
-              <dd className="text-fg-3">Simulated Sea-Tac arrivals with a 20 to 35 minute touchdown-to-request lag.</dd>
+              <dd className="text-fg-3">
+                Simulated Sea-Tac arrivals with a 20 to 35 minute touchdown-to-request lag, and departures that pull riders from home 90 to 170
+                minutes ahead.
+              </dd>
             </div>
             <div>
               <dt className="font-medium text-fg-2">Venues</dt>
-              <dd className="text-fg-3">Simulated schedule for stadiums, arenas, theaters, conventions and cruise piers. Matchups are invented.</dd>
+              <dd className="text-fg-3">
+                Simulated schedule for stadiums, arenas, theaters, conventions, cruise piers, live-music rooms and clubs. The venues are real;
+                matchups, line-ups and crowd sizes are invented.
+              </dd>
             </div>
             <div>
               <dt className="font-medium text-fg-2">Forecast · {model?.label ?? 'TimesFM'}</dt>

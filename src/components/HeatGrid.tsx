@@ -34,6 +34,8 @@ export function HeatGrid({
   sel,
   onSelect,
   onZone,
+  limit,
+  onMore,
   className,
 }: {
   view: View;
@@ -41,6 +43,9 @@ export function HeatGrid({
   sel: number;
   onSelect: (step: number) => void;
   onZone: (zone: ZoneId) => void;
+  /** Show only the first rows (the overview keeps to the top of the list). */
+  limit?: number;
+  onMore?: () => void;
   className?: string;
 }) {
   const [sort, setSort] = useState<Sort>('hot');
@@ -50,12 +55,13 @@ export function HeatGrid({
     const drive = new Map(recs.map((r) => [r.zone.id, r.driveMin]));
     const peak = (id: ZoneId) => view.byZone[id].reduce((max, s) => Math.max(max, s.mult), 1);
     const nearer = (a: ZoneId, b: ZoneId) => (drive.get(a) ?? 0) - (drive.get(b) ?? 0);
-    return ZONES.map((zone) => ({ zone, driveMin: drive.get(zone.id) ?? 0 })).sort((a, b) =>
+    const sorted = ZONES.map((zone) => ({ zone, driveMin: drive.get(zone.id) ?? 0 })).sort((a, b) =>
       sort === 'hot' ? peak(b.zone.id) - peak(a.zone.id) || nearer(a.zone.id, b.zone.id) : nearer(a.zone.id, b.zone.id),
     );
-  }, [view, recs, sort]);
+    return limit ? sorted.slice(0, limit) : sorted;
+  }, [view, recs, sort, limit]);
 
-  const focusId = picked ?? rows[0].zone.id;
+  const focusId = picked && rows.some((r) => r.zone.id === picked) ? picked : rows[0].zone.id;
   const focus = view.byZone[focusId][sel];
 
   return (
@@ -64,7 +70,8 @@ export function HeatGrid({
       <div className="px-1">
         <h2 className="text-[15px] font-semibold">Zone demand heat grid</h2>
         <p className="mt-0.5 text-[12px] text-fg-3">
-          Forecast surge multiplier per zone, every 15 minutes for the next {fmtDuration(view.steps.length * 15)}.
+          {limit ? `Top ${rows.length} of ${ZONES.length} zones` : `All ${ZONES.length} zones`}, every 15 minutes for the next{' '}
+          {fmtDuration(view.steps.length * 15)}.
         </p>
       </div>
 
@@ -150,6 +157,11 @@ export function HeatGrid({
         </tbody>
       </table>
 
+      {limit && onMore && (
+        <button type="button" onClick={onMore} className="mt-2 h-10 w-full rounded-xl border border-line-2 text-[13px] font-medium">
+          Show all {ZONES.length} zones
+        </button>
+      )}
       <HeatLegend className="mt-3 px-1" />
       </div>
 
@@ -183,7 +195,8 @@ export function HeatGrid({
         </dl>
         <dl className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px]">
           <Driver swatch="bg-baseline" label="Everyday" value={focus.organic} />
-          <Driver swatch="bg-flights" label="Flights" value={focus.flights} />
+          <Driver swatch="bg-flights" label="Arrivals" value={focus.flights} />
+          <Driver swatch="bg-airport" label="To airport" value={focus.airport} />
           <Driver swatch="bg-events" label="Events" value={focus.events} />
         </dl>
       </div>

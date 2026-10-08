@@ -11,7 +11,7 @@ import type { LatLng, Snapshot, StagingSpot, VenueEvent, Zone, ZoneStep } from '
 import { clamp } from './util';
 import { SPOT_BY_ID, ZONES, defaultSpot } from './zones';
 
-export type Cause = 'flights' | 'events' | 'organic';
+export type Cause = 'flights' | 'airport' | 'events' | 'organic';
 
 export interface Recommendation {
   zone: Zone;
@@ -45,6 +45,7 @@ function causeOf(step: ZoneStep): Cause {
   if (step.demand > 0) {
     if (step.events / step.demand >= 0.35 && step.events >= step.flights) return 'events';
     if (step.flights / step.demand >= 0.35) return 'flights';
+    if (step.airport / step.demand >= 0.35) return 'airport';
   }
   return 'organic';
 }
@@ -71,13 +72,17 @@ function reasonFor(snapshot: Snapshot, zone: Zone, step: ZoneStep, cause: Cause,
       ? `${wave.flights} arrivals put about ${fmtCount(wave.requests)} ride requests at the curb ${fmtRange(wave.start, wave.end)}`
       : `Arrivals reach the curb around ${fmtClock(step.t)}`;
   }
+  if (cause === 'airport') {
+    return `About ${step.airport} riders leaving here for Sea-Tac around ${fmtClock(step.t)}: long fares to catch the next departure bank`;
+  }
   if (cause === 'events') {
     const event = eventFor(snapshot, zone, step.t);
     if (event) {
       const elsewhere = event.zoneId === zone.id ? '' : ' nearby';
-      return event.kind === 'cruise'
-        ? `Cruise passengers leaving ${event.venue} ${fmtRange(event.egressStart, event.egressEnd)}`
-        : `${event.title} lets out${elsewhere} around ${fmtClock(event.end)} · ${fmtCount(event.attendance)} people`;
+      if (event.kind === 'cruise') return `Cruise passengers leaving ${event.venue} ${fmtRange(event.egressStart, event.egressEnd)}`;
+      if (event.kind === 'convention') return `${event.title} at ${event.venue}${elsewhere} around ${fmtClock(event.end)} · ${fmtCount(event.attendance)} people`;
+      if (event.kind === 'nightlife') return `${event.venue}${elsewhere} empties toward its ${fmtClock(event.end)} close`;
+      return `${event.title} lets out${elsewhere} around ${fmtClock(event.end)} · ${fmtCount(event.attendance)} people`;
     }
     return `Venue crowd leaving around ${fmtClock(step.t)}`;
   }

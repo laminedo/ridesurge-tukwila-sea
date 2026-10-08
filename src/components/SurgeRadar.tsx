@@ -36,11 +36,11 @@ function Blip({
   const style = {
     left: `${zone.radar.x}%`,
     top: `${zone.radar.y}%`,
-    width: `${12.6 + clamp((current.mult - 1) / 2.5, 0, 1) * 1.2}%`,
+    width: `${10.2 + clamp((current.mult - 1) / 2.5, 0, 1) * 0.9}%`,
     background: heatColor(current.mult),
     color: heatInk(current.mult),
     // A gap in the surface colour, then (if rising) a ring in the colour of what is coming.
-    boxShadow: `0 0 0 2px #0a1019${rising ? `, 0 0 0 5px ${heatColor(ahead)}` : ''}`,
+    boxShadow: `0 0 0 1.5px #0a1019${rising ? `, 0 0 0 4px ${heatColor(ahead)}` : ''}`,
     '--echo': heatColor(current.mult),
     '--echo-delay': `${(bearing / 360 - 1) * SWEEP_SECONDS}s`,
     '--sweep': `${SWEEP_SECONDS}s`,
@@ -58,16 +58,17 @@ function Blip({
         current.mult >= 1.3 && 'blip-echo',
       )}
     >
-      <span className="text-[9px] font-semibold leading-none tracking-wide opacity-85">{zone.code}</span>
-      <span className="mt-0.5 text-[13px] font-semibold leading-none tabular-nums">{current.mult.toFixed(1)}</span>
+      {/* Type scales with the scope (cqw), so 21 blips stay legible from a phone to a monitor. */}
+      <span className="text-[clamp(8px,2.5cqw,10px)] font-semibold leading-none tracking-wide opacity-85">{zone.code}</span>
+      <span className="mt-px text-[clamp(10.5px,3.4cqw,14px)] font-semibold leading-none tabular-nums">{current.mult.toFixed(1)}</span>
       {rising && (
-        <span className="absolute -right-1.5 -top-1.5 flex size-4 items-center justify-center rounded-full bg-fg text-plane">
-          <ArrowUp className="size-3" strokeWidth={3} aria-hidden />
+        <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-fg text-plane">
+          <ArrowUp className="size-2.5" strokeWidth={3.5} aria-hidden />
         </span>
       )}
       {here && (
-        <span className="absolute -bottom-1.5 -left-1.5 flex size-4 items-center justify-center rounded-full bg-accent text-accent-ink">
-          <LocateFixed className="size-3" strokeWidth={2.5} aria-hidden />
+        <span className="absolute -bottom-1 -left-1 flex size-3.5 items-center justify-center rounded-full bg-accent text-accent-ink">
+          <LocateFixed className="size-2.5" strokeWidth={2.5} aria-hidden />
         </span>
       )}
     </button>
@@ -76,24 +77,27 @@ function Blip({
 
 /** Schematic backdrop: Puget Sound, Lake Washington and the freeway spines for orientation. */
 function Scope() {
-  const road = { fill: 'none', stroke: 'var(--color-line-2)', strokeWidth: 0.55, strokeLinecap: 'round' } as const;
-  const label = { fontSize: 2.5, fill: 'var(--color-fg-3)', opacity: 0.75 } as const;
+  const road = { fill: 'none', stroke: 'var(--color-line-2)', strokeWidth: 0.5, strokeLinecap: 'round' } as const;
+  const label = { fontSize: 2.4, fill: 'var(--color-fg-3)', opacity: 0.75 } as const;
   return (
     <svg viewBox="0 0 100 100" className="absolute inset-0 size-full" aria-hidden>
-      <path d="M0 0H22C16 14 14 30 21 42c5 8 3 20-1 30-3 10 0 20-4 28H0Z" fill="#0d2136" opacity="0.6" />
-      <path d="M69 9c6 8 4 20 5 30 1 10-1 18-5 20-3-6-2-16-3-26-1-10-1-18 3-24Z" fill="#0d2136" opacity="0.6" />
+      <path d="M0 0H13C9 14 8 30 9 44c1 8 2 14 0 22-2 12 4 22 6 34H0Z" fill="#0d2136" opacity="0.6" />
+      <path d="M66 26c3 6 2 14 2.5 21 .5 6-.5 10-2.5 11-2.5-4-2-10-2.5-17-.5-6 0-11 2.5-15Z" fill="#0d2136" opacity="0.6" />
       {[16, 32, 48].map((r) => (
         <circle key={r} cx="50" cy="50" r={r} fill="none" stroke="var(--color-line)" strokeWidth="0.3" />
       ))}
       <path d="M50 2V98M2 50H98" stroke="var(--color-line)" strokeWidth="0.2" />
-      <path d="M52 100C50 88 50 80 49 72 48 62 46 58 46 50 46 42 49 36 49 28 49 18 49 10 50 0" {...road} />
-      <path d="M50 76C60 74 70 70 76 62 82 54 80 44 80 34 80 22 78 10 76 0" {...road} />
-      <path d="M46 50C56 50 70 46 80 44" {...road} />
-      <path d="M50 15C60 16 72 18 79 24" {...road} />
-      <text x="50.5" y="96" {...label}>I-5</text>
-      <text x="81.5" y="50" {...label}>405</text>
-      <text x="66" y="48.5" {...label}>I-90</text>
-      <text x="48.2" y="5.5" {...label} fontWeight="600" opacity="1">N</text>
+      {/* I-5, I-405, I-90, SR-520 and Aurora (SR-99) */}
+      <path d="M47 100C47 92 48 84 48 76 48 68 49 62 49 55 49 49 45 46 45 41 45 35 46 30 46 24 46 16 50 10 50 0" {...road} />
+      <path d="M48 74C56 74 66 70 71 63 76 55 79 50 79 44 79 36 74 28 72 21 71 14 70 6 69 0" {...road} />
+      <path d="M48 56C58 55 70 50 79 46" {...road} />
+      <path d="M52 29C62 31 74 32 86 31" {...road} />
+      <path d="M40 55C36 48 35 40 35 32 35 24 33 18 34 10 35 6 37 3 38 0" {...road} strokeWidth={0.35} />
+      <text x="50" y="66" {...label}>I-5</text>
+      <text x="80.5" y="56" {...label}>405</text>
+      <text x="62" y="50.5" {...label}>I-90</text>
+      <text x="29.5" y="21" {...label}>99</text>
+      <text x="20" y="14" {...label} fontWeight="600" opacity="1">N ↑</text>
     </svg>
   );
 }
@@ -172,7 +176,7 @@ export function SurgeRadar({
         </p>
       </div>
 
-      <div className="relative mx-auto mt-3 aspect-square w-full max-w-[440px] md:my-auto">
+      <div className="@container relative mx-auto mt-3 aspect-square w-full max-w-[520px] md:my-auto">
         <div className="absolute inset-0 overflow-hidden rounded-full border border-line-2 bg-[radial-gradient(circle,#0f1a27_0%,#080d14_100%)]">
           <Scope />
           <div className="radar-sweep absolute inset-0 rounded-full" style={{ '--sweep': `${SWEEP_SECONDS}s` } as CSSProperties} aria-hidden />

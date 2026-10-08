@@ -15,7 +15,7 @@ import { HOME_BASE, ZONES } from '@/lib/zones';
 import { BestMove } from './BestMove';
 import { BottomNav } from './BottomNav';
 import { EventsPanel, EventsSummary } from './EventsPanel';
-import { FlightMonitor, FlightWaveCard, UpcomingWavesCard } from './FlightMonitor';
+import { AirportRunsCard, FlightMonitor, FlightWaveCard, UpcomingWavesCard } from './FlightMonitor';
 import { Header, type Health } from './Header';
 import { HeatGrid } from './HeatGrid';
 import { SettingsSheet } from './SettingsSheet';
@@ -194,13 +194,18 @@ export function AppShell() {
                       sel={sel}
                       onSelect={setStep}
                       onZone={setZoneId}
+                      limit={10}
+                      onMore={() => setTab('grid')}
                       className="md:col-span-2 xl:col-span-1"
                     />
-                    <FlightWaveCard feed={snapshot.flights} now={now} className="md:col-span-2" />
-                    <div className="grid content-start gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-1 xl:grid-cols-1">
-                      <UpcomingWavesCard feed={snapshot.flights} now={now} driveMin={airportDrive} navApp={settings.navApp} limit={2} />
-                      <EventsSummary feed={snapshot.events} now={now} onMore={() => setTab('events')} />
+                    <div className="grid content-start gap-3 md:col-span-2">
+                      <FlightWaveCard feed={snapshot.flights} now={now} />
+                      <div className="grid items-start gap-3 md:grid-cols-2">
+                        <UpcomingWavesCard feed={snapshot.flights} now={now} driveMin={airportDrive} navApp={settings.navApp} limit={2} />
+                        <EventsSummary feed={snapshot.events} now={now} onMore={() => setTab('events')} />
+                      </div>
                     </div>
+                    <AirportRunsCard feed={snapshot.airportRuns} recs={recs} onZone={setZoneId} limit={5} className="md:col-span-2 xl:col-span-1" />
                   </>
                 )}
               </div>
@@ -209,6 +214,9 @@ export function AppShell() {
             {tab === 'flights' && (
               <FlightMonitor
                 feed={snapshot.flights}
+                airportRuns={snapshot.airportRuns}
+                recs={recs}
+                onZone={setZoneId}
                 now={now}
                 driveMin={airportDrive}
                 navApp={settings.navApp}

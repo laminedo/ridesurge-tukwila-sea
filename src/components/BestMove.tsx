@@ -1,4 +1,4 @@
-import { ChevronRight, PlaneLanding, Ticket, TrendingUp } from 'lucide-react';
+import { ChevronRight, PlaneLanding, PlaneTakeoff, Ticket, TrendingUp } from 'lucide-react';
 import { fmtClock, fmtDuration, fmtMult, fmtRelative, fmtShort } from '@/lib/format';
 import type { NavApp } from '@/lib/nav';
 import type { Cause, Recommendation } from '@/lib/recommend';
@@ -9,6 +9,7 @@ import { Card, Eyebrow, ForecastStrip, MultBadge, NavLink, cx } from './ui';
 
 export function CauseIcon({ cause, className }: { cause: Cause; className?: string }) {
   if (cause === 'flights') return <PlaneLanding className={cx('text-flights', className)} aria-hidden />;
+  if (cause === 'airport') return <PlaneTakeoff className={cx('text-airport', className)} aria-hidden />;
   if (cause === 'events') return <Ticket className={cx('text-events', className)} aria-hidden />;
   return <TrendingUp className={cx('text-fg-3', className)} aria-hidden />;
 }

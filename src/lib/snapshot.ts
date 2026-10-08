@@ -1,4 +1,5 @@
 import { buildForecast } from './forecast/surge';
+import { buildAirportRunFeed } from './sim/departures';
 import { buildEventFeed } from './sim/events';
 import { buildFlightFeed } from './sim/flights';
 import { DAY, pacificOffsetMs } from './time';
@@ -13,6 +14,7 @@ export async function buildSnapshot(at: number): Promise<Snapshot> {
     generatedAt: at,
     simulated: true,
     flights: buildFlightFeed(at, offset),
+    airportRuns: buildAirportRunFeed(at, offset),
     events: buildEventFeed(at, offset),
     forecast: await buildForecast(at, offset),
   };

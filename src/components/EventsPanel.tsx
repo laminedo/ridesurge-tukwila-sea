@@ -1,11 +1,14 @@
-import { Building2, Drama, Music, PartyPopper, Ship, Trophy, type LucideIcon } from 'lucide-react';
+'use client';
+
+import { Building2, Drama, Martini, Music, PartyPopper, Ship, Trophy, type LucideIcon } from 'lucide-react';
+import { useState } from 'react';
 import { fmtClock, fmtCount, fmtRange, fmtRelative, fmtShort } from '@/lib/format';
 import type { NavApp } from '@/lib/nav';
 import { MIN } from '@/lib/time';
 import type { EventFeed, EventKind, VenueEvent } from '@/lib/types';
 import { clamp } from '@/lib/util';
 import { SPOT_BY_ID, ZONE_BY_ID } from '@/lib/zones';
-import { Card, NavLink, cx } from './ui';
+import { Card, NavLink, Segmented, cx } from './ui';
 
 const KIND_ICON: Record<EventKind, LucideIcon> = {
   sports: Trophy,
@@ -14,6 +17,7 @@ const KIND_ICON: Record<EventKind, LucideIcon> = {
   convention: Building2,
   cruise: Ship,
   festival: PartyPopper,
+  nightlife: Martini,
 };
 
 /** Ride requests leaving the venue over time, with a marker for "now". */
@@ -53,7 +57,20 @@ function EgressCurve({ event, now }: { event: VenueEvent; now: number }) {
   );
 }
 
+/** The moment that matters for a driver, and what to call it. */
+function exitTime(event: VenueEvent): { label: string; t: number } {
+  if (event.kind === 'cruise') return { label: 'Peak exit', t: event.egressPeak };
+  if (event.kind === 'nightlife') return { label: 'Closes', t: event.end };
+  return { label: 'Lets out', t: event.end };
+}
+
 function statusLine(event: VenueEvent, now: number): { label: string; live: boolean } {
+  if (event.kind === 'nightlife') {
+    if (event.status === 'upcoming') return { label: `Opens ${fmtClock(event.start)}`, live: false };
+    if (event.status === 'live') return { label: 'Open', live: false };
+    if (event.status === 'egress') return { label: now < event.end - 30 * MIN ? 'Starting to empty' : 'Closing rush', live: true };
+    return { label: 'Closed', live: false };
+  }
   switch (event.status) {
     case 'upcoming':
       return { label: `Starts ${fmtClock(event.start)}`, live: false };
@@ -70,7 +87,8 @@ function EventCard({ event, now, navApp }: { event: VenueEvent; now: number; nav
   const Icon = KIND_ICON[event.kind];
   const spot = SPOT_BY_ID[event.stagingSpotId];
   const { label, live } = statusLine(event, now);
-  const cruise = event.kind === 'cruise';
+  const exit = exitTime(event);
+  const nightlife = event.kind === 'nightlife';
   const untilMin = clamp((event.egressStart - now) / MIN, -999, 9999);
 
   return (
@@ -87,18 +105,21 @@ function EventCard({ event, now, navApp }: { event: VenueEvent; now: number; nav
               {label}
             </span>
           </p>
-          <h3 className="mt-1.5 text-[16px] font-semibold leading-snug">{event.title}</h3>
+          {/* For a club the venue is the headline; for a show it is the event. */}
+          <h3 className="mt-1.5 text-[16px] font-semibold leading-snug">{nightlife ? event.venue : event.title}</h3>
           <p className="mt-0.5 truncate text-[12px] text-fg-3">
-            {event.venue} · {ZONE_BY_ID[event.zoneId].name}
+            {nightlife ? event.title : event.venue} · {ZONE_BY_ID[event.zoneId].name}
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <p className="text-[11px] text-fg-3">{cruise ? 'Peak exit' : 'Lets out'}</p>
-          <p className="text-[21px] font-semibold leading-tight tabular-nums">{fmtShort(cruise ? event.egressPeak : event.end)}</p>
+          <p className="text-[11px] text-fg-3">{exit.label}</p>
+          <p className="text-[21px] font-semibold leading-tight tabular-nums">{fmtShort(exit.t)}</p>
           <p className="text-[11px] tabular-nums text-fg-3">
-            {event.status === 'egress' || event.status === 'cleared'
-              ? `clears ${fmtShort(event.egressEnd)}`
-              : `± ${event.endUncertaintyMin} min`}
+            {event.kind === 'nightlife'
+              ? 'last call'
+              : event.status === 'egress' || event.status === 'cleared'
+                ? `clears ${fmtShort(event.egressEnd)}`
+                : `± ${event.endUncertaintyMin} min`}
           </p>
         </div>
       </div>
@@ -109,7 +130,7 @@ function EventCard({ event, now, navApp }: { event: VenueEvent; now: number; nav
 
       <dl className="mt-3 grid grid-cols-3 gap-2 text-[12px]">
         <div>
-          <dt className="text-fg-3">Crowd</dt>
+          <dt className="text-fg-3">{event.kind === 'nightlife' ? 'Through the door' : 'Crowd'}</dt>
           <dd className="font-medium tabular-nums">{fmtCount(event.attendance)}</dd>
         </div>
         <div>
@@ -173,16 +194,14 @@ export function EventsSummary({
                   <Icon className="size-4 text-events" aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] font-medium">{event.title}</span>
+                  <span className="block truncate text-[14px] font-medium">{event.kind === 'nightlife' ? event.venue : event.title}</span>
                   <span className="block truncate text-[12px] text-fg-3">
-                    {event.venue} · {live ? label : `${fmtCount(event.attendance)} people`}
+                    {event.kind === 'nightlife' ? event.tag : event.venue} · {live ? label : `${fmtCount(event.attendance)} people`}
                   </span>
                 </span>
                 <span className="shrink-0 text-right">
-                  <span className="block text-[15px] font-semibold tabular-nums">
-                    {fmtShort(event.kind === 'cruise' ? event.egressPeak : event.end)}
-                  </span>
-                  <span className="block text-[11px] text-fg-3">{live ? 'letting out' : 'lets out'}</span>
+                  <span className="block text-[15px] font-semibold tabular-nums">{fmtShort(exitTime(event).t)}</span>
+                  <span className="block text-[11px] text-fg-3">{live ? 'now' : exitTime(event).label.toLowerCase()}</span>
                 </span>
               </li>
             );
@@ -195,20 +214,34 @@ export function EventsSummary({
   );
 }
 
+type Filter = 'all' | 'shows' | 'clubs';
+const FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'shows', label: 'Shows & games' },
+  { id: 'clubs', label: 'Clubs' },
+] as const;
+
 export function EventsPanel({ feed, now, navApp }: { feed: EventFeed; now: number; navApp: NavApp }) {
+  const [filter, setFilter] = useState<Filter>('all');
+
   // What is letting out now first, then the next dismissals in order.
-  const events = [...feed.events].sort((a, b) => {
-    const rank = (e: VenueEvent) => (e.status === 'egress' ? 0 : e.status === 'cleared' ? 2 : 1);
-    return rank(a) - rank(b) || a.egressStart - b.egressStart;
-  });
+  const events = feed.events
+    .filter((e) => filter === 'all' || (filter === 'clubs') === (e.kind === 'nightlife'))
+    .sort((a, b) => {
+      const rank = (e: VenueEvent) => (e.status === 'egress' ? 0 : e.status === 'cleared' ? 2 : 1);
+      return rank(a) - rank(b) || a.egressStart - b.egressStart;
+    });
 
   return (
     <div className="space-y-3">
       <div className="px-1">
-        <h2 className="text-[15px] font-semibold">Stadium and venue dismissals</h2>
+        <h2 className="text-[15px] font-semibold">Venues, clubs and dismissals</h2>
         <p className="mt-0.5 text-[12px] text-fg-3">
-          When each crowd lets out, how fast it clears and where to stage ahead of it.
+          When each crowd lets out or each club closes, how fast it clears and where to stage ahead of it.
         </p>
+      </div>
+      <div className="md:max-w-lg">
+        <Segmented label="Filter venues" options={FILTERS} value={filter} onChange={setFilter} />
       </div>
       {events.length > 0 ? (
         <div className="grid items-start gap-3 md:grid-cols-2 2xl:grid-cols-3">
@@ -218,9 +251,13 @@ export function EventsPanel({ feed, now, navApp }: { feed: EventFeed; now: numbe
         </div>
       ) : (
         <Card>
-          <p className="text-[14px] font-medium">Nothing letting out in the next 18 hours</p>
+          <p className="text-[14px] font-medium">
+            {filter === 'clubs' ? 'No clubs open in the next 12 hours' : 'Nothing letting out in the next 18 hours'}
+          </p>
           <p className="mt-1 text-[13px] text-fg-3">
-            No stadium, arena, theater or cruise dismissals are on the schedule. Flight waves and everyday demand still drive the radar.
+            {filter === 'clubs'
+              ? 'Club nights run Thursday to Saturday; the showgirls clubs open nightly from early evening.'
+              : 'No stadium, arena, theater or cruise dismissals are on the schedule. Flight waves and everyday demand still drive the radar.'}
           </p>
         </Card>
       )}

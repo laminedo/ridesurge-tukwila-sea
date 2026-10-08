@@ -13,7 +13,7 @@ const VERSION = new URL(self.location.href).searchParams.get('v') || 'dev';
 const BASE = new URL(self.registration.scope).pathname.replace(/\/$/, '');
 const SHELL = `ridesurge-shell-${VERSION}`;
 const STATIC = `ridesurge-static-${VERSION}`;
-const DATA = 'ridesurge-data-v1';
+const DATA = 'ridesurge-data-v2';
 
 const ROOT = `${BASE}/`;
 const OFFLINE = `${BASE}/offline.html`;

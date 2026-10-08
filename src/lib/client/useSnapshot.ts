@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { Snapshot } from '../types';
+import { ZONES } from '../zones';
 import { BASE_PATH, STATIC_EXPORT } from './env';
 
-const CACHE_KEY = 'ridesurge:snapshot:v1';
+// Bump when the snapshot shape changes, so an older saved copy is never fed to newer screens.
+const CACHE_KEY = 'ridesurge:snapshot:v2';
 const POLL_MS = 60_000;
 const TIMEOUT_MS = 8_000;
 
@@ -15,6 +17,8 @@ function isSnapshot(value: unknown): value is Snapshot {
     v !== null &&
     typeof v.generatedAt === 'number' &&
     Array.isArray(v.forecast?.zones) &&
+    v.forecast.zones.length === ZONES.length &&
+    Array.isArray(v.airportRuns?.steps) &&
     Array.isArray(v.forecast?.steps) &&
     Array.isArray(v.flights?.buckets) &&
     Array.isArray(v.events?.events)

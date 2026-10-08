@@ -19,7 +19,8 @@ const GAP = 2;
 
 const SERIES = [
   { key: 'organic', label: 'Everyday', fill: 'var(--color-baseline)', swatch: 'bg-baseline' },
-  { key: 'flights', label: 'Flights', fill: 'var(--color-flights)', swatch: 'bg-flights' },
+  { key: 'flights', label: 'Arrivals', fill: 'var(--color-flights)', swatch: 'bg-flights' },
+  { key: 'airport', label: 'To airport', fill: 'var(--color-airport)', swatch: 'bg-airport' },
   { key: 'events', label: 'Events', fill: 'var(--color-events)', swatch: 'bg-events' },
 ] as const;
 
@@ -194,6 +195,7 @@ function ZoneBody({
   const peak = steps.reduce((best, s) => (s.mult > best.mult ? s : best), steps[0]);
   const horizonEnd = steps[steps.length - 1].t + 15 * MIN;
   const waves = zone === 'SEA' ? snapshot.flights.waves : [];
+  const airportNextHour = steps.slice(0, 4).reduce((s, x) => s + x.airport, 0);
   const events = snapshot.events.events.filter(
     (e) => (e.spill[zone] ?? 0) > 0 && e.egressEnd > now && e.egressStart < horizonEnd,
   );
@@ -248,7 +250,7 @@ function ZoneBody({
         </p>
       </section>
 
-      {(waves.length > 0 || events.length > 0) && (
+      {(waves.length > 0 || events.length > 0 || airportNextHour >= 3) && (
         <section>
           <h3 className="text-[14px] font-semibold">What is coming</h3>
           <ul className="mt-2 space-y-2 text-[13px] text-fg-2">
@@ -261,6 +263,14 @@ function ZoneBody({
                 </span>
               </li>
             ))}
+            {airportNextHour >= 3 && (
+              <li className="flex items-start gap-2">
+                <CauseIcon cause="airport" className="mt-0.5 size-4 shrink-0" />
+                <span>
+                  <span className="font-medium text-fg">Next hour</span> · about {airportNextHour} riders leaving here for Sea-Tac
+                </span>
+              </li>
+            )}
             {events.map((e) => (
               <li key={e.id} className="flex items-start gap-2">
                 <CauseIcon cause="events" className="mt-0.5 size-4 shrink-0" />

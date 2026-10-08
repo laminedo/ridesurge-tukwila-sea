@@ -1,14 +1,16 @@
 'use client';
 
+import { ChevronRight } from 'lucide-react';
 import { useState, type PointerEvent } from 'react';
 import { useElementWidth } from '@/lib/client/stores';
 import { fmtCount, fmtDuration, fmtRange, fmtRelative, fmtShort, fmtShortRange } from '@/lib/format';
 import type { NavApp } from '@/lib/nav';
 import { MIN } from '@/lib/time';
-import type { Flight, FlightFeed, FlightWave } from '@/lib/types';
+import type { Recommendation } from '@/lib/recommend';
+import type { AirportRunFeed, Flight, FlightFeed, FlightWave, ZoneId } from '@/lib/types';
 import { clamp } from '@/lib/util';
-import { defaultSpot } from '@/lib/zones';
-import { Card, Eyebrow, NavLink, Segmented, cx } from './ui';
+import { ZONE_BY_ID, defaultSpot } from '@/lib/zones';
+import { Card, Eyebrow, MultBadge, NavLink, Segmented, cx } from './ui';
 
 /* ---------- Chart ---------- */
 
@@ -374,17 +376,143 @@ export function UpcomingWavesCard({
   );
 }
 
+/** Airport-bound ride requests per 15 minutes: one series, so the card title is its legend. */
+function RunBars({ feed }: { feed: AirportRunFeed }) {
+  const [frame, measured] = useElementWidth<HTMLDivElement>();
+  const W = measured || 320;
+  const H = 112;
+  const pad = { top: 18, bottom: 20 };
+  const floor = H - pad.bottom;
+  const slot = W / feed.total.length;
+  const bar = Math.min(12, slot - 4);
+  const max = Math.max(1, ...feed.total);
+  const peak = feed.total.indexOf(max);
+
+  return (
+    <div ref={frame}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="block w-full"
+        role="img"
+        aria-label={`Airport-bound ride requests per 15 minutes, peaking near ${fmtShort(feed.steps[peak])} at about ${Math.round(max)}`}
+      >
+        <line x1="0" x2={W} y1={floor + 0.5} y2={floor + 0.5} stroke="var(--color-line-2)" strokeWidth="1" />
+        {feed.total.map((v, i) => {
+          const h = (v / max) * (floor - pad.top);
+          const x = i * slot + (slot - bar) / 2;
+          return (
+            <g key={feed.steps[i]}>
+              {h > 0.5 && <rect x={x} y={floor - h} width={bar} height={h} rx={Math.min(4, h / 2)} fill="var(--color-airport)" />}
+              {i === peak && max >= 1 && (
+                <text x={x + bar / 2} y={floor - h - 5} textAnchor="middle" fontSize="10" fontWeight="600" fill="var(--color-fg)">
+                  {Math.round(v)}
+                </text>
+              )}
+              {(i === 0 || (i > 1 && new Date(feed.steps[i]).getUTCMinutes() === 0)) && (
+                <text x={i * slot + slot / 2} y={H - 5} textAnchor="middle" fontSize="9" fill="var(--color-fg-3)">
+                  {i === 0 ? 'Now' : fmtShort(feed.steps[i])}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+/** Rides from home to the airport: how many are coming and which neighbourhoods they start in. */
+export function AirportRunsCard({
+  feed,
+  recs,
+  onZone,
+  limit = 6,
+  className,
+}: {
+  feed: AirportRunFeed;
+  recs: Recommendation[];
+  onZone: (zone: ZoneId) => void;
+  limit?: number;
+  className?: string;
+}) {
+  const nextHour = feed.total.slice(0, 4).reduce((s, v) => s + v, 0);
+  const rec = new Map(recs.map((r) => [r.zone.id, r]));
+  const origins = feed.zones
+    .map((z) => ({ zoneId: z.zoneId, rides: z.requests.slice(0, 4).reduce((s, v) => s + v, 0) }))
+    .filter((z) => z.rides >= 0.5)
+    .sort((a, b) => b.rides - a.rides)
+    .slice(0, limit);
+
+  return (
+    <Card className={cx('p-3', className)}>
+      <div className="px-1">
+        <h2 className="text-[15px] font-semibold">Rides to the airport</h2>
+        <p className="mt-0.5 text-[12px] text-fg-3">
+          Riders leave home {feed.lead.minMin} to {feed.lead.maxMin} minutes before take-off.{' '}
+          {feed.departing.flights > 0
+            ? `${feed.departing.flights} flights depart ${fmtRange(feed.departing.from, feed.departing.to)}.`
+            : 'No departures are coming up.'}
+        </p>
+      </div>
+
+      <div className="mt-3 flex items-baseline gap-2 px-1">
+        <p className="text-[26px] font-semibold leading-none">~{fmtCount(nextHour)}</p>
+        <p className="text-[12px] text-fg-3">airport rides across the region in the next hour</p>
+      </div>
+      <div className="mt-2 px-1">
+        <RunBars feed={feed} />
+      </div>
+
+      {origins.length > 0 ? (
+        <>
+          <Eyebrow className="mt-3 px-1">Where they start</Eyebrow>
+          <ul className="mt-1 divide-y divide-line px-1">
+            {origins.map(({ zoneId, rides }) => {
+              const r = rec.get(zoneId);
+              return (
+                <li key={zoneId}>
+                  <button type="button" onClick={() => onZone(zoneId)} className="flex h-13 w-full items-center gap-3 text-left">
+                    <span className="w-9 shrink-0 text-right text-[17px] font-semibold tabular-nums">{Math.round(rides)}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14px] font-medium">{ZONE_BY_ID[zoneId].name}</span>
+                      <span className="block truncate text-[12px] text-fg-3">
+                        rides next hour{r ? ` · ${fmtDuration(r.driveMin)} away` : ''}
+                      </span>
+                    </span>
+                    {r && <MultBadge mult={r.nowMult} className="shrink-0 text-[12px]" />}
+                    <ChevronRight className="size-4 shrink-0 text-fg-3" aria-hidden />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : (
+        <p className="mt-2 px-1 text-[13px] text-fg-3">
+          Almost nobody is heading to the airport right now. The first riders of the morning bank leave home around 3:30 AM.
+        </p>
+      )}
+    </Card>
+  );
+}
+
 export function FlightMonitor({
   feed,
+  airportRuns,
+  recs,
   now,
   driveMin,
   navApp,
+  onZone,
 }: {
   feed: FlightFeed;
+  airportRuns: AirportRunFeed;
+  recs: Recommendation[];
   now: number;
   /** Drive time from the driver to the airport waiting lot. */
   driveMin: number;
   navApp: NavApp;
+  onZone: (zone: ZoneId) => void;
 }) {
   const bucketMs = feed.bucketMin * MIN;
   const curbNow = feed.buckets.filter((b) => b.t + bucketMs > now && b.t < now + 15 * MIN).reduce((s, b) => s + b.curb, 0);
@@ -410,7 +538,8 @@ export function FlightMonitor({
         <FlightWaveCard feed={feed} now={now} />
         <UpcomingWavesCard feed={feed} now={now} driveMin={driveMin} navApp={navApp} />
       </div>
-      <div className="lg:col-span-5">
+      <div className="space-y-3 lg:col-span-5">
+        <AirportRunsCard feed={airportRuns} recs={recs} onZone={onZone} />
         <Arrivals flights={feed.arrivals} />
       </div>
     </div>

@@ -9,7 +9,17 @@ export type ZoneId =
   | 'SLU'
   | 'LQA'
   | 'UDX'
-  | 'BEL';
+  | 'BEL'
+  | 'BAL'
+  | 'FRE'
+  | 'NGT'
+  | 'AUR'
+  | 'SHO'
+  | 'WSE'
+  | 'BUR'
+  | 'FDW'
+  | 'KRK'
+  | 'RDM';
 
 export interface LatLng {
   lat: number;
@@ -99,7 +109,7 @@ export interface FlightFeed {
 
 /* ---------- Venue events ---------- */
 
-export type EventKind = 'sports' | 'concert' | 'theater' | 'convention' | 'cruise' | 'festival';
+export type EventKind = 'sports' | 'concert' | 'theater' | 'convention' | 'cruise' | 'festival' | 'nightlife';
 export type EventStatus = 'upcoming' | 'live' | 'egress' | 'cleared';
 
 export interface VenueEvent {
@@ -134,6 +144,22 @@ export interface EventFeed {
   events: VenueEvent[];
 }
 
+/* ---------- Rides to the airport ---------- */
+
+export interface AirportRunFeed {
+  generatedAt: number;
+  source: 'simulated';
+  stepMin: number;
+  /** How long before departure riders leave home. */
+  lead: { minMin: number; maxMin: number };
+  steps: number[];
+  /** Region-wide airport-bound ride requests per step. */
+  total: number[];
+  zones: { zoneId: ZoneId; requests: number[] }[];
+  /** The departures those riders are travelling to catch. */
+  departing: { from: number; to: number; flights: number; pax: number };
+}
+
 /* ---------- Forecast ---------- */
 
 export interface ZoneStep {
@@ -144,7 +170,10 @@ export interface ZoneStep {
   demand: number;
   supply: number;
   organic: number;
+  /** Arrivals at the airport curb. */
   flights: number;
+  /** Riders heading from this zone to the airport. */
+  airport: number;
   events: number;
 }
 
@@ -178,6 +207,7 @@ export interface Snapshot {
   generatedAt: number;
   simulated: boolean;
   flights: FlightFeed;
+  airportRuns: AirportRunFeed;
   events: EventFeed;
   forecast: ForecastFeed;
 }

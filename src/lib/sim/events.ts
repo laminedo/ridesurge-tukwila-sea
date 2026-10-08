@@ -41,6 +41,24 @@ const VENUES = {
   starfire: { name: 'Starfire Sports', zoneId: 'TUK', capacity: 4500, spill: { TUK: 0.85, REN: 0.15 }, spot: 'tuk-mall' },
   meydenbauer: { name: 'Meydenbauer Center', zoneId: 'BEL', capacity: 2500, spill: { BEL: 1 }, spot: 'bel-tc' },
   bellevueWay: { name: 'Bellevue Way', zoneId: 'BEL', capacity: 12000, spill: { BEL: 1 }, spot: 'bel-way' },
+
+  // Live-music rooms. Capacity is the room.
+  showbox: { name: 'The Showbox', zoneId: 'DTN', capacity: 1150, spill: { DTN: 0.9, LQA: 0.1 }, spot: 'dtn-pike' },
+  crocodile: { name: 'The Crocodile', zoneId: 'DTN', capacity: 750, spill: { DTN: 0.85, LQA: 0.15 }, spot: 'dtn-belltown' },
+  neumos: { name: 'Neumos', zoneId: 'CAP', capacity: 650, spill: { CAP: 1 }, spot: 'cap-broadway' },
+  tractor: { name: 'Tractor Tavern', zoneId: 'BAL', capacity: 400, spill: { BAL: 1 }, spot: 'bal-market' },
+  nectar: { name: 'Nectar Lounge', zoneId: 'FRE', capacity: 450, spill: { FRE: 0.9, BAL: 0.1 }, spot: 'fre-center' },
+
+  // Clubs and late-night venues. Capacity is a busy night's total door count, not the room.
+  qNightclub: { name: 'Q Nightclub', zoneId: 'CAP', capacity: 900, spill: { CAP: 0.9, DTN: 0.1 }, spot: 'cap-broadway' },
+  trinity: { name: 'Trinity Nightclub', zoneId: 'DTN', capacity: 1100, spill: { DTN: 0.7, SODO: 0.3 }, spot: 'dtn-pioneer' },
+  ora: { name: 'Ora Nightclub', zoneId: 'DTN', capacity: 700, spill: { DTN: 0.85, LQA: 0.15 }, spot: 'dtn-belltown' },
+  kremwerk: { name: 'Kremwerk', zoneId: 'DTN', capacity: 500, spill: { DTN: 0.6, SLU: 0.3, CAP: 0.1 }, spot: 'dtn-convention' },
+  supernova: { name: 'Supernova', zoneId: 'SODO', capacity: 800, spill: { SODO: 0.9, DTN: 0.1 }, spot: 'sodo-station' },
+  monkeyLoft: { name: 'Monkey Loft', zoneId: 'SODO', capacity: 350, spill: { SODO: 1 }, spot: 'sodo-station' },
+  showgirls: { name: 'Showgirls Seattle', zoneId: 'DTN', capacity: 260, spill: { DTN: 1 }, spot: 'dtn-pike' },
+  dreamGirls: { name: 'Dream Girls at SoDo', zoneId: 'SODO', capacity: 300, spill: { SODO: 0.9, DTN: 0.1 }, spot: 'sodo-holgate' },
+  kittens: { name: 'Kittens Cabaret', zoneId: 'SODO', capacity: 180, spill: { SODO: 1 }, spot: 'sodo-georgetown' },
 } satisfies Record<string, Venue>;
 type VenueId = keyof typeof VENUES;
 
@@ -68,6 +86,8 @@ interface Program {
   capacity?: number;
   /** Override for crowds that trickle out during the event (cruise disembarkation). */
   egress?: { earlyMin: number; clearMin: number };
+  /** Late-night venues empty toward a hard closing time instead of after a final whistle. */
+  closing?: boolean;
 }
 
 const inMonths = (month: number, from: number, to: number) =>
@@ -75,6 +95,24 @@ const inMonths = (month: number, from: number, to: number) =>
 const cruiseSeason = ({ month, date }: DayContext) =>
   (month > 4 && month < 10) || (month === 4 && date >= 15) || (month === 10 && date <= 20);
 const evening = () => [19.5] as const;
+const weekend = ({ dow }: DayContext) => dow === 5 || dow === 6;
+
+/** A touring-band room: doors in the evening, out before midnight. */
+const liveRoom = (id: string, venue: VenueId, busy: number, quiet: number, titles: readonly string[]): Program => ({
+  id, venue, kind: 'concert', tag: 'Live music', titles,
+  chance: ({ dow }) => (dow >= 3 && dow <= 6 ? busy : quiet),
+  starts: () => [20, 20.5],
+  durationMin: [165, 200], fill: [0.55, 1], sigmaMin: 10,
+});
+
+/** A dance club: open from `opens` until last call at `closes` (hours past midnight count from 24). */
+const club = (id: string, venue: VenueId, tag: string, opens: number, closes: number, chance: Program['chance']): Program => ({
+  id, venue, kind: 'nightlife', tag, titles: [tag === 'Showgirls' ? 'Open until close' : 'Club night'],
+  chance,
+  starts: () => [opens],
+  durationMin: [(closes - opens) * 60, (closes - opens) * 60], fill: [0.45, 1], sigmaMin: 0,
+  closing: true,
+});
 
 /** Listed in priority order: an earlier program claims the venue for the day. */
 const PROGRAMS: readonly Program[] = [
@@ -213,6 +251,20 @@ const PROGRAMS: readonly Program[] = [
     durationMin: [80, 90], fill: [0.55, 0.9], sigmaMin: 15,
     egress: { earlyMin: 70, clearMin: 110 },
   },
+  liveRoom('showbox', 'showbox', 0.6, 0.25, ['Showbox: touring headliner', 'Showbox: sold-out club show', 'Showbox: indie double bill']),
+  liveRoom('crocodile', 'crocodile', 0.6, 0.3, ['Crocodile: touring headliner', 'Crocodile: local showcase']),
+  liveRoom('neumos', 'neumos', 0.6, 0.3, ['Neumos: touring headliner', 'Neumos: DJ and live set']),
+  liveRoom('tractor', 'tractor', 0.6, 0.3, ['Tractor Tavern: Americana night', 'Tractor Tavern: touring band']),
+  liveRoom('nectar', 'nectar', 0.6, 0.3, ['Nectar Lounge: funk and jam night', 'Nectar Lounge: touring band']),
+  club('q-nightclub', 'qNightclub', 'Club', 22, 26, (c) => (weekend(c) ? 1 : c.dow === 4 ? 0.7 : 0)),
+  club('trinity', 'trinity', 'Club', 22, 26, (c) => (weekend(c) ? 1 : c.dow === 4 ? 0.6 : 0)),
+  club('ora', 'ora', 'Club', 22, 26, (c) => (weekend(c) ? 1 : 0)),
+  club('kremwerk', 'kremwerk', 'Club', 22, 26, (c) => (weekend(c) ? 1 : c.dow === 4 ? 0.6 : 0)),
+  club('supernova', 'supernova', 'Club', 22, 26, (c) => (weekend(c) ? 1 : 0)),
+  club('monkey-loft', 'monkeyLoft', 'Club', 22, 26, (c) => (weekend(c) ? 0.9 : 0)),
+  club('showgirls', 'showgirls', 'Showgirls', 20, 26, () => 1),
+  club('dream-girls', 'dreamGirls', 'Showgirls', 19, 26.5, () => 1),
+  club('kittens', 'kittens', 'Showgirls', 19, 26, (c) => (c.dow === 0 ? 0.6 : 1)),
   {
     id: 'snowflake-lane', venue: 'bellevueWay', kind: 'festival', tag: 'Festival',
     titles: ['Snowflake Lane parade'],
@@ -230,6 +282,8 @@ const RIDE_PROFILE: Record<EventKind, readonly [share: number, partySize: number
   convention: [0.1, 1.3],
   cruise: [0.26, 2.3],
   festival: [0.04, 2.6],
+  // People who have been drinking do not drive home.
+  nightlife: [0.3, 2.0],
 };
 
 interface RawEvent extends Omit<VenueEvent, 'status' | 'endUncertaintyMin' | 'curve'> {
@@ -239,6 +293,29 @@ interface RawEvent extends Omit<VenueEvent, 'status' | 'endUncertaintyMin' | 'cu
 }
 
 const dayCache = new Map<string, RawEvent[]>();
+
+/** How long before closing a club starts to empty, and how fast the door clears afterwards. */
+const CLOSING_RAMP_MIN = 150;
+const CLOSING_TAIL_MIN = 25;
+
+/** A venue with a closing time: a slow trickle that builds to a rush at last call, then stops. */
+function closingCurve(end: number, requests: number) {
+  const egressStart = end - CLOSING_RAMP_MIN * MIN;
+  const curveStart = floorTo(egressStart, BUCKET);
+  const weights: number[] = [];
+  for (let t = curveStart; t < end + CLOSING_TAIL_MIN * MIN; t += BUCKET) {
+    const x = (t + BUCKET / 2 - end) / MIN;
+    weights.push(x <= 0 ? Math.exp(x / 45) : Math.exp(-x / 7));
+  }
+  const total = weights.reduce((s, w) => s + w, 0) || 1;
+  return {
+    egressStart,
+    egressPeak: end,
+    egressEnd: end + 15 * MIN,
+    curveStart,
+    curve: weights.map((w) => (w / total) * requests),
+  };
+}
 
 function egressCurve(end: number, attendance: number, requests: number, override?: Program['egress']) {
   // Bigger crowds take longer to clear the building and the surrounding streets.
@@ -308,7 +385,7 @@ export function eventsForDay(day: number, offset: number): RawEvent[] {
       stagingSpotId: venue.spot,
       spill: venue.spill,
       bucketMin: EVENT_BUCKET_MIN,
-      ...egressCurve(end, attendance, requests, program.egress),
+      ...(program.closing ? closingCurve(end, requests) : egressCurve(end, attendance, requests, program.egress)),
     });
   }
 
@@ -359,9 +436,10 @@ function statusOf(e: RawEvent, now: number): EventStatus {
 
 export function buildEventFeed(now: number, offset: number): EventFeed {
   const events = eventsBetween(now - 20 * MIN, now + 18 * HOUR, offset)
-    .filter((e) => e.egressEnd > now - 20 * MIN && e.start < now + 18 * HOUR)
+    // A club that has not opened yet only matters on the night itself.
+    .filter((e) => e.egressEnd > now - 20 * MIN && e.start < now + (e.kind === 'nightlife' ? 12 : 18) * HOUR)
     .sort((a, b) => a.end - b.end)
-    .slice(0, 12)
+    .slice(0, 40)
     .map((e): VenueEvent => {
       const { sigmaMin, curveStart, curve, ...rest } = e;
       // The estimate firms up as the event nears its end.

@@ -1,8 +1,9 @@
+import { airportRunTotals, originShare, typicalAirportRuns } from '../sim/departures';
 import { eventZoneSeries } from '../sim/events';
 import { flightCurbSeries, typicalCurbDemand } from '../sim/flights';
 import { dayLevel, organicActual, supplyBaseline } from '../sim/organic';
 import { MIN, floorTo, localClock } from '../time';
-import type { ForecastFeed, ZoneForecast, ZoneStep } from '../types';
+import type { ForecastFeed, ZoneForecast, ZoneId, ZoneStep } from '../types';
 import { round1 } from '../util';
 import { ZONES } from '../zones';
 import { CONTEXT_STEPS, HORIZON_STEPS, STEP_MIN, runForecast, type SeriesInput } from './timesfm';
@@ -35,16 +36,23 @@ export async function buildForecast(now: number, offset: number): Promise<Foreca
   // Known-future covariates: who is landing and which venues are letting out.
   const flights = flightCurbSeries(contextStart, STEP, span, offset);
   const events = eventZoneSeries(contextStart, STEP, span, offset);
+  // Riders leaving home for the airport, split across the zones they start in.
+  const airportRuns = airportRunTotals(contextStart, STEP, span, offset);
   const none = new Array<number>(span).fill(0);
+  const airportFor = (zone: ZoneId) => {
+    const share = originShare(zone);
+    return share > 0 ? airportRuns.map((v) => v * share) : none;
+  };
 
   const series: SeriesInput[] = ZONES.map((zone) => {
     const fl = zone.id === 'SEA' ? flights : none;
     const ev = events[zone.id] ?? none;
+    const ap = airportFor(zone.id);
     const context = new Array<number>(CONTEXT_STEPS);
     for (let i = 0; i < CONTEXT_STEPS; i++) {
-      context[i] = round1(organicActual(zone.id, contextStart + i * STEP, offset) + fl[i] + ev[i]);
+      context[i] = round1(organicActual(zone.id, contextStart + i * STEP, offset) + fl[i] + ev[i] + ap[i]);
     }
-    return { id: zone.id, context, covariates: [fl.map(round1), ev.map(round1)] };
+    return { id: zone.id, context, covariates: [fl.map(round1), ev.map(round1), ap.map(round1)] };
   });
 
   const { model, forecasts } = await runForecast(series, HORIZON_STEPS);
@@ -52,6 +60,8 @@ export async function buildForecast(now: number, offset: number): Promise<Foreca
   const zones: ZoneForecast[] = ZONES.map((zone, z) => {
     const fl = zone.id === 'SEA' ? flights : none;
     const ev = events[zone.id] ?? none;
+    const ap = airportFor(zone.id);
+    const share = originShare(zone.id);
     const forecast = forecasts[z];
 
     const airport = zone.id === 'SEA';
@@ -77,12 +87,14 @@ export async function buildForecast(now: number, offset: number): Promise<Foreca
         const usualBefore = typicalCurbDemand(hour - STEP_MIN / 60, STEP_MIN);
         supply += 0.92 * usual + 0.25 * Math.max(0, fl[i - 1] - usualBefore) + queued;
       }
+      // Drivers expect the morning airport bank, so only an unusually heavy one outruns them.
+      supply += 0.9 * share * typicalAirportRuns(hour, STEP_MIN);
       supply = Math.max(airport ? 14 : 4, supply);
 
       const demand = Math.max(0, forecast.point[h]);
       if (airport) queued = Math.min(120, QUEUE_CARRYOVER * Math.max(0, supply - demand));
       // Flight and egress volumes carry their own error on top of the model's band.
-      const exogenous = 0.12 * fl[i] + 0.22 * ev[i];
+      const exogenous = 0.12 * fl[i] + 0.22 * ev[i] + 0.15 * ap[i];
       const low = Math.max(0, Math.min(demand, forecast.q10[h] - exogenous));
       const high = Math.max(demand, forecast.q90[h] + exogenous);
 
@@ -93,8 +105,9 @@ export async function buildForecast(now: number, offset: number): Promise<Foreca
         hi: surgeMultiplier(high, supply),
         demand: Math.round(demand),
         supply: Math.round(supply),
-        organic: Math.round(Math.max(0, demand - fl[i] - ev[i])),
+        organic: Math.round(Math.max(0, demand - fl[i] - ev[i] - ap[i])),
         flights: Math.round(fl[i]),
+        airport: Math.round(ap[i]),
         events: Math.round(ev[i]),
       });
     }

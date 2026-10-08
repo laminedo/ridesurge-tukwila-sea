@@ -17,8 +17,9 @@
   --color-accent: #35d6c0;
   --color-accent-ink: #03211d;
 
-  /* Demand drivers: validated as a colour-blind-safe pair on the dark surface. */
+  /* Demand drivers: validated as a colour-blind-safe set on the dark surface. */
   --color-flights: #3987e5;
+  --color-airport: #d95926;
   --color-events: #199e70;
   --color-baseline: #55657a;
 

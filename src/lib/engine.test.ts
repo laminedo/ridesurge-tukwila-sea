@@ -3,6 +3,7 @@ import { surgeMultiplier, MAX_MULTIPLIER } from './forecast/surge';
 import { CONTEXT_STEPS, HORIZON_STEPS, emulateTimesFM, runForecast, type SeriesInput } from './forecast/timesfm';
 import { driveMinutes } from './geo';
 import { rankZones } from './recommend';
+import { LEAD_MAX, LEAD_MIN, airportRunTotals, buildAirportRunFeed, originShare } from './sim/departures';
 import { eventsForDay } from './sim/events';
 import { LAG_MAX, LAG_MIN, buildFlightFeed, flightsForDay, lagCdf, spreadCurb } from './sim/flights';
 import { buildSnapshot, resolveAt } from './snapshot';
@@ -110,6 +111,57 @@ describe('venue egress', () => {
       const spill = Object.values(e.spill).reduce((s, v) => s + (v ?? 0), 0);
       expect(spill).toBeCloseTo(1, 6);
     }
+  });
+});
+
+describe('clubs and late-night venues', () => {
+  it('empty toward closing time with the rush at last call', () => {
+    // Friday night: every club is open.
+    const clubs = eventsForDay(localClock(FRIDAY_NIGHT, OFFSET).day, OFFSET).filter((e) => e.kind === 'nightlife');
+    expect(clubs.length).toBeGreaterThanOrEqual(8);
+    expect(clubs.some((e) => e.tag === 'Showgirls')).toBe(true);
+    for (const club of clubs) {
+      const closeHour = localClock(club.end, OFFSET).hour;
+      expect(closeHour).toBeGreaterThanOrEqual(2);
+      expect(closeHour).toBeLessThan(3);
+      const busiest = club.curve.indexOf(Math.max(...club.curve));
+      const busiestAt = club.curveStart + busiest * 5 * MIN;
+      expect(Math.abs(busiestAt - club.end)).toBeLessThanOrEqual(5 * MIN);
+    }
+  });
+});
+
+describe('rides to the airport', () => {
+  // Thursday 5:00 AM Pacific: riders are leaving home for the morning departure bank.
+  const EARLY = Date.parse('2026-10-08T12:00:00Z');
+
+  it('peak before dawn and fade overnight', () => {
+    const offset = pacificOffsetMs(EARLY);
+    const morning = airportRunTotals(EARLY, 15 * MIN, 4, offset).reduce((s, v) => s + v, 0);
+    const lateNight = airportRunTotals(EARLY - 5 * 60 * MIN, 15 * MIN, 4, offset).reduce((s, v) => s + v, 0);
+    expect(morning).toBeGreaterThan(200);
+    expect(lateNight).toBeLessThan(morning / 10);
+    expect(LEAD_MIN).toBeLessThan(LEAD_MAX);
+  });
+
+  it('start in neighbourhoods and hotels, never at the airport itself', () => {
+    const feed = buildAirportRunFeed(EARLY, pacificOffsetMs(EARLY));
+    expect(originShare('SEA')).toBe(0);
+    expect(feed.zones.some((z) => z.zoneId === 'SEA')).toBe(false);
+    expect(ZONES.reduce((s, z) => s + originShare(z.id), 0)).toBeCloseTo(1, 6);
+    feed.total.forEach((total, i) => {
+      const split = feed.zones.reduce((s, z) => s + z.requests[i], 0);
+      expect(Math.abs(split - total)).toBeLessThan(1.5);
+    });
+    expect(feed.departing.flights).toBeGreaterThan(50);
+  });
+
+  it('show up in the zone forecast as their own demand source', async () => {
+    const { forecast } = await buildSnapshot(EARLY);
+    const downtown = forecast.zones.find((z) => z.zoneId === 'DTN');
+    const airport = forecast.zones.find((z) => z.zoneId === 'SEA');
+    expect(downtown?.steps[0].airport).toBeGreaterThan(5);
+    expect(airport?.steps.every((s) => s.airport === 0)).toBe(true);
   });
 });
 
@@ -267,8 +319,17 @@ describe('recommendations', () => {
 });
 
 describe('zones and staging', () => {
-  it('covers at least eight zones, each with a staging spot', () => {
-    expect(ZONES.length).toBeGreaterThanOrEqual(8);
+  it('keeps radar blips apart and inside the scope', () => {
+    for (const a of ZONES) {
+      expect(Math.hypot(a.radar.x - 50, a.radar.y - 50)).toBeLessThanOrEqual(44);
+      for (const b of ZONES) {
+        if (a.id < b.id) expect(Math.hypot(a.radar.x - b.radar.x, a.radar.y - b.radar.y)).toBeGreaterThanOrEqual(13);
+      }
+    }
+  });
+
+  it('covers at least twenty zones, each with a staging spot', () => {
+    expect(ZONES.length).toBeGreaterThanOrEqual(20);
     for (const zone of ZONES) expect(defaultSpot(zone.id)).toBeDefined();
     expect(new Set(STAGING_SPOTS.map((s) => s.id)).size).toBe(STAGING_SPOTS.length);
   });
