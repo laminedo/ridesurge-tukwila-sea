@@ -27,6 +27,17 @@ export interface StagingSpot extends LatLng {
   official: boolean;
 }
 
+/** A hotel worth knowing as a pickup point. */
+export interface Hotel {
+  id: string;
+  name: string;
+  zoneId: ZoneId;
+  /** Approximate room count: how much business it can generate. */
+  rooms: number;
+  /** What the navigation app is asked to find. */
+  address: string;
+}
+
 /** The market a snapshot describes: what the screens need to draw it. */
 export interface RegionInfo {
   id: string;
@@ -39,6 +50,8 @@ export interface RegionInfo {
   airport: { code: string; name: string; zoneId: ZoneId } | null;
   zones: Zone[];
   spots: StagingSpot[];
+  /** Named hotels, where the region has a curated list. Elsewhere the app hands off to a map search. */
+  hotels: Hotel[];
 }
 
 /* ---------- Flights ---------- */

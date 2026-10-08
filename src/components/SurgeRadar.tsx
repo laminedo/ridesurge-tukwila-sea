@@ -3,12 +3,12 @@
 import { ArrowUp, LocateFixed, Pause, Play } from 'lucide-react';
 import { useEffect, useState, type CSSProperties } from 'react';
 import { fmtClock, fmtMult, fmtRange, fmtShort } from '@/lib/format';
-import { heatColor, heatInk } from '@/lib/heat';
+import { heatColor, heatInk, type Metric } from '@/lib/heat';
 import type { Zone, ZoneId, ZoneStep } from '@/lib/types';
 import { clamp } from '@/lib/util';
 import type { View } from '@/lib/view';
 import { useRegion } from './RegionContext';
-import { Card, HeatLegend, cx } from './ui';
+import { Card, HeatLegend, MetricSwitch, cx, heatOf } from './ui';
 
 const SWEEP_SECONDS = 7;
 /** A zone is flagged as rising when its peak in the next hour beats the shown value by this much. */
@@ -19,29 +19,35 @@ function Blip({
   steps,
   sel,
   here,
+  metric,
+  maxDemand,
   onZone,
 }: {
   zone: Zone;
   steps: ZoneStep[];
   sel: number;
   here: boolean;
+  metric: Metric;
+  maxDemand: number;
   onZone: (zone: ZoneId) => void;
 }) {
   const current = steps[sel];
   const ahead = steps.slice(sel + 1, sel + 5).reduce((max, s) => Math.max(max, s.mult), 0);
   const rising = ahead >= current.mult + RISING_BY;
+  // Colour and number follow the chosen metric; the ring always warns of a coming surge.
+  const { heat, label, level } = heatOf(current, metric, maxDemand);
 
   // Bearing from the scope centre, so the echo fires as the sweep crosses the blip.
   const bearing = ((Math.atan2(zone.radar.x - 50, 50 - zone.radar.y) * 180) / Math.PI + 360) % 360;
   const style = {
     left: `${zone.radar.x}%`,
     top: `${zone.radar.y}%`,
-    width: `${10.2 + clamp((current.mult - 1) / 2.5, 0, 1) * 0.9}%`,
-    background: heatColor(current.mult),
-    color: heatInk(current.mult),
+    width: `${10.2 + clamp((heat - 1) / 2.5, 0, 1) * 0.9}%`,
+    background: heatColor(heat),
+    color: heatInk(heat),
     // A gap in the surface colour, then (if rising) a ring in the colour of what is coming.
     boxShadow: `0 0 0 1.5px #0a1019${rising ? `, 0 0 0 4px ${heatColor(ahead)}` : ''}`,
-    '--echo': heatColor(current.mult),
+    '--echo': heatColor(heat),
     '--echo-delay': `${(bearing / 360 - 1) * SWEEP_SECONDS}s`,
     '--sweep': `${SWEEP_SECONDS}s`,
   } as CSSProperties;
@@ -51,16 +57,16 @@ function Blip({
       type="button"
       onClick={() => onZone(zone.id)}
       style={style}
-      aria-label={`${zone.name}: ${fmtMult(current.mult)}${rising ? `, rising to ${fmtMult(ahead)} within the hour` : ''}`}
+      aria-label={`${zone.name}: ${level.toLowerCase()}, ${metric === 'surge' ? fmtMult(current.mult) : `${current.demand} requests per 15 minutes`}${rising ? `, surge rising to ${fmtMult(ahead)} within the hour` : ''}`}
       className={cx(
         'absolute flex aspect-square -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full',
         'transition-[background-color,box-shadow,width] duration-300 active:brightness-125',
-        current.mult >= 1.3 && 'blip-echo',
+        heat >= 1.3 && 'blip-echo',
       )}
     >
       {/* Type scales with the scope (cqw), so 21 blips stay legible from a phone to a monitor. */}
       <span className="text-[clamp(8px,2.5cqw,10px)] font-semibold leading-none tracking-wide opacity-85">{zone.code}</span>
-      <span className="mt-px text-[clamp(10.5px,3.4cqw,14px)] font-semibold leading-none tabular-nums">{current.mult.toFixed(1)}</span>
+      <span className="mt-px text-[clamp(10.5px,3.4cqw,14px)] font-semibold leading-none tabular-nums">{label}</span>
       {rising && (
         <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-fg text-plane">
           <ArrowUp className="size-2.5" strokeWidth={3.5} aria-hidden />
@@ -174,11 +180,15 @@ export function SurgeRadar({
   onSelect,
   onZone,
   hereZoneId,
+  metric,
+  onMetric,
 }: {
   view: View;
   sel: number;
   onSelect: (step: number) => void;
   onZone: (zone: ZoneId) => void;
+  metric: Metric;
+  onMetric: (metric: Metric) => void;
   /** Zone the driver is in (or based in). */
   hereZoneId: ZoneId;
 }) {
@@ -186,11 +196,15 @@ export function SurgeRadar({
 
   return (
     <Card className="flex flex-col p-3">
-      <div className="flex items-baseline justify-between px-1">
-        <h2 className="text-[15px] font-semibold">Surge radar</h2>
-        <p className="text-[13px] tabular-nums text-fg-2" aria-live="polite">
-          {sel === 0 ? 'Now' : fmtRange(view.steps[sel], view.steps[sel] + view.stepMs)}
-        </p>
+      <div className="flex items-center justify-between gap-2 px-1">
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold">{metric === 'surge' ? 'Surge radar' : 'Demand radar'}</h2>
+          <p className="truncate text-[12px] tabular-nums text-fg-3" aria-live="polite">
+            {sel === 0 ? 'Now' : fmtRange(view.steps[sel], view.steps[sel] + view.stepMs)} ·{' '}
+            {metric === 'surge' ? 'price multiplier' : 'ride requests per 15 min'}
+          </p>
+        </div>
+        <MetricSwitch metric={metric} onChange={onMetric} />
       </div>
 
       <div className="@container relative mx-auto mt-3 aspect-square w-full max-w-[520px] md:my-auto">
@@ -199,18 +213,27 @@ export function SurgeRadar({
           <div className="radar-sweep absolute inset-0 rounded-full" style={{ '--sweep': `${SWEEP_SECONDS}s` } as CSSProperties} aria-hidden />
         </div>
         {info.zones.map((zone) => (
-          <Blip key={zone.id} zone={zone} steps={view.byZone[zone.id]} sel={sel} here={zone.id === hereZoneId} onZone={onZone} />
+          <Blip
+            key={zone.id}
+            zone={zone}
+            steps={view.byZone[zone.id]}
+            sel={sel}
+            here={zone.id === hereZoneId}
+            metric={metric}
+            maxDemand={view.maxDemand}
+            onZone={onZone}
+          />
         ))}
       </div>
 
       <Scrubber steps={view.steps} sel={sel} onSelect={onSelect} />
 
       <div className="mt-3 border-t border-line px-1 pt-3">
-        <HeatLegend />
+        <HeatLegend metric={metric} />
         <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-3">
           <span className="flex items-center gap-1.5">
             <span className="size-3 rounded-full border-2 border-[#f08a1c]" aria-hidden />
-            Ring: peak within the next hour
+            Ring: surge peak within the hour
           </span>
           <span className="flex items-center gap-1.5">
             <LocateFixed className="size-3 text-accent" aria-hidden />

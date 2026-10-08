@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from 'react';
 import { fmtClock, fmtDuration, fmtMult, fmtShort } from '@/lib/format';
-import { heatColor, heatInk } from '@/lib/heat';
+import { heatColor, heatInk, type Metric } from '@/lib/heat';
 import type { Recommendation } from '@/lib/recommend';
 import type { ZoneId } from '@/lib/types';
 import type { View } from '@/lib/view';
 import { useRegion } from './RegionContext';
-import { Card, HeatLegend, MultBadge, Segmented, cx } from './ui';
+import { Card, HeatLegend, MetricSwitch, Segmented, cx, heatOf } from './ui';
 
 type Sort = 'hot' | 'near';
 const SORTS = [
@@ -36,8 +36,12 @@ export function HeatGrid({
   onZone,
   limit,
   onMore,
+  metric,
+  onMetric,
   className,
 }: {
+  metric: Metric;
+  onMetric: (metric: Metric) => void;
   view: View;
   recs: Recommendation[];
   sel: number;
@@ -65,16 +69,20 @@ export function HeatGrid({
 
   const focusId = picked && rows.some((r) => r.zone.id === picked) ? picked : rows[0].zone.id;
   const focus = view.byZone[focusId][sel];
+  const focusCell = heatOf(focus, metric, view.maxDemand);
 
   return (
     // A container, so the layout follows the card's own width wherever it is placed.
     <Card className={cx('@container p-3', className)}>
-      <div className="px-1">
+      <div className="flex items-start justify-between gap-2 px-1">
+        <div className="min-w-0">
         <h2 className="text-[15px] font-semibold">Zone demand heat grid</h2>
         <p className="mt-0.5 text-[12px] text-fg-3">
           {limit ? `Top ${rows.length} of ${zones.length} zones` : `All ${zones.length} zones`}, every 15 minutes for the next{' '}
           {fmtDuration(view.steps.length * 15)}.
         </p>
+        </div>
+        <MetricSwitch metric={metric} onChange={onMetric} />
       </div>
 
       <div className="mt-3 @4xl:max-w-sm">
@@ -133,6 +141,7 @@ export function HeatGrid({
               </th>
               {view.byZone[zone.id].map((s, i) => {
                 const active = zone.id === focusId && i === sel;
+                const cell = heatOf(s, metric, view.maxDemand);
                 return (
                   <td key={s.t} className="p-0">
                     <button
@@ -141,15 +150,15 @@ export function HeatGrid({
                         setPicked(zone.id);
                         onSelect(i);
                       }}
-                      aria-label={`${zone.name}, ${i === 0 ? 'now' : fmtClock(s.t)}: ${fmtMult(s.mult)}`}
+                      aria-label={`${zone.name}, ${i === 0 ? 'now' : fmtClock(s.t)}: ${cell.level.toLowerCase()}, ${metric === 'surge' ? fmtMult(s.mult) : `${s.demand} requests`}`}
                       aria-pressed={active}
                       className={cx(
                         'flex h-9 w-full items-center justify-center rounded-[4px] text-[10px] font-semibold tabular-nums @2xl:text-[12px] @4xl:h-11',
                         active && 'relative z-10 outline outline-2 outline-fg',
                       )}
-                      style={{ background: heatColor(s.mult), color: heatInk(s.mult) }}
+                      style={{ background: heatColor(cell.heat), color: heatInk(cell.heat) }}
                     >
-                      {s.mult >= LABEL_FROM ? s.mult.toFixed(1) : ''}
+                      {cell.heat >= LABEL_FROM ? cell.label : ''}
                     </button>
                   </td>
                 );
@@ -164,17 +173,26 @@ export function HeatGrid({
           Show all {zones.length} zones
         </button>
       )}
-      <HeatLegend className="mt-3 px-1" />
+      <HeatLegend metric={metric} className="mt-3 px-1" />
       </div>
 
       <div className="mt-3 rounded-xl border border-line bg-raised p-3 @4xl:mt-2 @4xl:w-80 @4xl:shrink-0" aria-live="polite">
         <div className="flex items-center gap-3">
-          <MultBadge mult={focus.mult} className="h-10 w-14 text-[17px]" />
+          <span
+            className="flex h-10 w-14 shrink-0 items-center justify-center rounded-md text-[17px] font-semibold tabular-nums"
+            style={{ background: heatColor(focusCell.heat), color: heatInk(focusCell.heat) }}
+          >
+            {metric === 'surge' ? fmtMult(focus.mult) : focus.demand}
+          </span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[14px] font-medium">{zoneById[focusId]?.name}</p>
             <p className="truncate text-[12px] text-fg-3">
-              {sel === 0 ? 'Now' : fmtClock(focus.t)} ·{' '}
-              {focus.lo === focus.hi ? 'no surge expected' : `range ${focus.lo.toFixed(1)}–${fmtMult(focus.hi)}`}
+              {sel === 0 ? 'Now' : fmtClock(focus.t)} · <span className="text-fg-2">{focusCell.level}</span> ·{' '}
+              {metric === 'demand'
+                ? `surge ${fmtMult(focus.mult)}`
+                : focus.lo === focus.hi
+                  ? 'no surge expected'
+                  : `range ${focus.lo.toFixed(1)}–${fmtMult(focus.hi)}`}
             </p>
           </div>
           <button

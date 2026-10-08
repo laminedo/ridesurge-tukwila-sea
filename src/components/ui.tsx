@@ -1,7 +1,7 @@
 import { Navigation } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { fmtMult, fmtShort } from '@/lib/format';
-import { HEAT_LEGEND, heatColor, heatInk } from '@/lib/heat';
+import { HEAT_LEGEND, demandHeat, demandLevel, heatColor, heatInk, surgeLevel, type Level, type Metric } from '@/lib/heat';
 import { navUrl, type NavApp } from '@/lib/nav';
 import type { StagingSpot, ZoneStep } from '@/lib/types';
 
@@ -61,7 +61,7 @@ export function NavLink({
 }) {
   const styles = {
     primary: 'min-h-13 gap-2.5 rounded-xl bg-accent px-4 py-2 text-[15px] font-semibold text-accent-ink',
-    quiet: 'h-11 gap-2 rounded-xl border border-line-2 bg-raised px-3.5 text-[13px] font-medium text-fg',
+    quiet: 'min-h-11 gap-2 rounded-xl border border-line-2 bg-raised px-3.5 py-1.5 text-[13px] font-medium text-fg',
     icon: 'size-12 shrink-0 rounded-xl bg-accent text-accent-ink',
   }[variant];
 
@@ -84,17 +84,61 @@ export function NavLink({
   );
 }
 
-/** Colour key for every heat-coloured mark in the app. */
-export function HeatLegend({ className }: { className?: string }) {
+/** How one zone at one step is drawn under the chosen metric: where it sits on the ramp, its label and its level. */
+export function heatOf(step: ZoneStep, metric: Metric, maxDemand: number): { heat: number; label: string; level: Level } {
+  if (metric === 'demand') {
+    const share = step.demand / Math.max(1, maxDemand);
+    return { heat: demandHeat(share), label: String(step.demand), level: demandLevel(share) };
+  }
+  return { heat: step.mult, label: step.mult.toFixed(1), level: surgeLevel(step.mult) };
+}
+
+const METRICS = [
+  { id: 'surge', label: 'Surge' },
+  { id: 'demand', label: 'Demand' },
+] as const;
+
+/** Switch between colouring zones by surge multiplier and by how busy they are. */
+export function MetricSwitch({ metric, onChange }: { metric: Metric; onChange: (metric: Metric) => void }) {
   return (
-    <div className={cx('flex items-center gap-2 text-[11px] text-fg-3', className)}>
-      <span className="tabular-nums">1.0×</span>
-      <span className="flex h-2 flex-1 overflow-hidden rounded-full" aria-hidden>
+    <div role="radiogroup" aria-label="Colour zones by" className="flex shrink-0 rounded-lg border border-line bg-plane p-0.5">
+      {METRICS.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          role="radio"
+          aria-checked={option.id === metric}
+          onClick={() => onChange(option.id)}
+          className={cx(
+            'h-8 rounded-md px-2.5 text-[12px] font-medium',
+            option.id === metric ? 'bg-raised text-fg shadow-[inset_0_0_0_1px_var(--color-line-2)]' : 'text-fg-3',
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Colour key for every heat-coloured mark in the app: blue is low, yellow is high. */
+export function HeatLegend({ metric = 'surge', className }: { metric?: Metric; className?: string }) {
+  return (
+    <div className={cx('text-[11px] text-fg-3', className)}>
+      <span className="flex h-2.5 overflow-hidden rounded-full" aria-hidden>
         {HEAT_LEGEND.map((m) => (
           <span key={m} className="flex-1" style={{ background: heatColor(m) }} />
         ))}
       </span>
-      <span className="tabular-nums">3.5×</span>
+      <div className="mt-1 flex justify-between">
+        <span>
+          <span className="font-medium text-fg-2">Low</span> · {metric === 'surge' ? '1.0×' : 'few requests'}
+        </span>
+        <span>Medium</span>
+        <span>
+          {metric === 'surge' ? '3.5×' : 'busiest zone'} · <span className="font-medium text-fg-2">High</span>
+        </span>
+      </div>
     </div>
   );
 }

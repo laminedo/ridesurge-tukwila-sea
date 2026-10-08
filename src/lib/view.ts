@@ -7,6 +7,8 @@ export interface View {
   steps: number[];
   byZone: Record<ZoneId, ZoneStep[]>;
   stepMs: number;
+  /** Highest ride-request count of any zone at any remaining step: the top of the demand scale. */
+  maxDemand: number;
 }
 
 /** Index of the forecast step containing `now` (above zero for an older saved snapshot). */
@@ -20,6 +22,10 @@ export function buildView(snapshot: Snapshot, nowIdx: number): View | null {
   const steps = snapshot.forecast.steps.slice(nowIdx);
   if (steps.length === 0) return null;
   const byZone = {} as Record<ZoneId, ZoneStep[]>;
-  for (const zone of snapshot.forecast.zones) byZone[zone.zoneId] = zone.steps.slice(nowIdx);
-  return { steps, byZone, stepMs: snapshot.forecast.stepMin * MIN };
+  let maxDemand = 1;
+  for (const zone of snapshot.forecast.zones) {
+    byZone[zone.zoneId] = zone.steps.slice(nowIdx);
+    for (const step of byZone[zone.zoneId]) maxDemand = Math.max(maxDemand, step.demand);
+  }
+  return { steps, byZone, stepMs: snapshot.forecast.stepMin * MIN, maxDemand };
 }

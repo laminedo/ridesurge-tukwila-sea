@@ -6,6 +6,7 @@
 import { SEATTLE_PROGRAMS, SEATTLE_VENUES } from '../sim/events';
 import { SEATTLE_CARRIERS } from '../sim/flights';
 import { HOME_BASE, STAGING_SPOTS, ZONES } from '../zones';
+import { SEATTLE_HOTELS } from './seattle-hotels';
 import type { ProfileWeights, Region } from './types';
 
 const PROFILES: Record<string, ProfileWeights> = {
@@ -47,6 +48,7 @@ export const SEATTLE: Region = {
   airport: { code: 'SEA', name: 'Seattle-Tacoma International Airport', zoneId: 'SEA' },
   zones: ZONES,
   spots: STAGING_SPOTS,
+  hotels: SEATTLE_HOTELS,
   profiles: PROFILES,
   airportOrigin: AIRPORT_ORIGIN,
   venues: SEATTLE_VENUES,

@@ -7,6 +7,7 @@ import { setTab, useGeolocation, useNow, useOnline, useSettings, useTab, useWide
 import { useSnapshot } from '@/lib/client/useSnapshot';
 import { fmtClock, fmtWeekday } from '@/lib/format';
 import { haversineMi } from '@/lib/geo';
+import type { Metric } from '@/lib/heat';
 import { rankZones } from '@/lib/recommend';
 import type { AreaSpec } from '@/lib/regions';
 import { MIN } from '@/lib/time';
@@ -20,6 +21,7 @@ import { Header, type Health } from './Header';
 import { RegionProvider } from './RegionContext';
 import { HeatGrid } from './HeatGrid';
 import { SettingsSheet } from './SettingsSheet';
+import { PoliceRadar } from './PoliceRadar';
 import { StagePanel } from './StagePanel';
 import { SurgeRadar } from './SurgeRadar';
 import { ZoneSheet } from './ZoneSheet';
@@ -66,6 +68,8 @@ export function AppShell() {
   const [step, setStep] = useState(0);
   const [zoneId, setZoneId] = useState<ZoneId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Colour zones by surge multiplier or by how busy they are; shared by the radar and the grid.
+  const [metric, setMetric] = useState<Metric>('surge');
 
   // Where the market is built: the curated one, around a chosen city, or around the device.
   const { area } = settings;
@@ -223,7 +227,7 @@ export function AppShell() {
             {tab === 'radar' && (
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <BestMove recs={recs} view={view} now={now} navApp={settings.navApp} onZone={setZoneId} />
-                <SurgeRadar view={view} sel={sel} onSelect={setStep} onZone={setZoneId} hereZoneId={hereZoneId} />
+                <SurgeRadar view={view} sel={sel} onSelect={setStep} onZone={setZoneId} hereZoneId={hereZoneId} metric={metric} onMetric={setMetric} />
                 {wide && (
                   <>
                     <HeatGrid
@@ -232,6 +236,8 @@ export function AppShell() {
                       sel={sel}
                       onSelect={setStep}
                       onZone={setZoneId}
+                      metric={metric}
+                      onMetric={setMetric}
                       limit={10}
                       onMore={() => setTab('grid')}
                       className="md:col-span-2 xl:col-span-1"
@@ -254,7 +260,9 @@ export function AppShell() {
                 )}
               </div>
             )}
-            {tab === 'grid' && <HeatGrid view={view} recs={recs} sel={sel} onSelect={setStep} onZone={setZoneId} />}
+            {tab === 'grid' && (
+              <HeatGrid view={view} recs={recs} sel={sel} onSelect={setStep} onZone={setZoneId} metric={metric} onMetric={setMetric} />
+            )}
             {tab === 'flights' && (
               <FlightMonitor
                 feed={snapshot.flights}
@@ -267,7 +275,8 @@ export function AppShell() {
               />
             )}
             {tab === 'events' && <EventsPanel feed={snapshot.events} now={now} navApp={settings.navApp} />}
-            {tab === 'stage' && <StagePanel recs={recs} view={view} navApp={settings.navApp} onZone={setZoneId} />}
+            {tab === 'stage' && <StagePanel recs={recs} view={view} now={now} navApp={settings.navApp} onZone={setZoneId} />}
+            {tab === 'police' && origin && <PoliceRadar origin={origin} usingGps={Boolean(live)} now={realNow ?? now} />}
           </div>
           <ZoneSheet
             zoneId={zoneId}

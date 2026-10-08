@@ -160,7 +160,7 @@ export function SettingsSheet({
                   : geolocation.anchor
                     ? `Scanning around your location${region ? `: ${region.name}` : ''}.`
                     : 'Waiting for your location. Your browser may ask for permission.'}{' '}
-                <span className="text-fg-3">Your location stays on this device; nothing is sent to a server.</span>
+                <span className="text-fg-3">Your location stays on this device, except when you report on the police radar.</span>
               </span>
             </p>
           )}
@@ -220,6 +220,13 @@ export function SettingsSheet({
               <dd className="text-fg-3">
                 Simulated arrivals at {airport} with a 20 to 35 minute touchdown-to-request lag, and departures that pull riders from home 90
                 to 170 minutes ahead. Volumes are sized to the airport.
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-fg-2">Police radar</dt>
+              <dd className="text-fg-3">
+                Real reports from RideSurge drivers, not simulated. Reporting sends the spot, rounded to about 100 metres, to a shared
+                database; reports fade after 45 minutes.
               </dd>
             </div>
             <div>

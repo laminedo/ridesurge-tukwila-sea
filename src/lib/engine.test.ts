@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { surgeMultiplier, MAX_MULTIPLIER } from './forecast/surge';
 import { CONTEXT_STEPS, HORIZON_STEPS, emulateTimesFM, runForecast, type SeriesInput } from './forecast/timesfm';
 import { driveMinutes } from './geo';
+import { demandHeat, demandLevel, heatColor, surgeLevel } from './heat';
+import { hotelPickups } from './hotels';
+import { bearingDeg, compassPoint, radarPosition } from './police';
 import { rankZones } from './recommend';
 import { SEATTLE, resolveRegion } from './regions';
 import { LEAD_MAX, LEAD_MIN, airportRunTotals, buildAirportRunFeed, originShare } from './sim/departures';
@@ -416,5 +419,60 @@ describe('regions anywhere in the US', () => {
 
   it('refuses a location with no towns in reach', async () => {
     await expect(resolveRegion({ mode: 'point', lat: 39.5, lng: -116.9 })).rejects.toThrow();
+  });
+});
+
+describe('high and low colours', () => {
+  it('names the level a colour stands for', () => {
+    expect(surgeLevel(1)).toBe('Low');
+    expect(surgeLevel(1.4)).toBe('Medium');
+    expect(surgeLevel(2)).toBe('High');
+    expect(surgeLevel(3)).toBe('Very high');
+    expect(demandLevel(0.05)).toBe('Low');
+    expect(demandLevel(0.9)).toBe('Very high');
+  });
+
+  it('puts the quietest and busiest zones at the two ends of the ramp', () => {
+    expect(heatColor(demandHeat(0))).toBe(heatColor(1));
+    expect(heatColor(demandHeat(1))).toBe(heatColor(3.5));
+    expect(heatColor(1)).not.toBe(heatColor(1.6));
+  });
+});
+
+describe('hotels', () => {
+  it('belong to zones that exist', () => {
+    expect(SEATTLE.hotels.length).toBeGreaterThan(40);
+    const zoneIds = new Set(SEATTLE.zones.map((z) => z.id));
+    for (const hotel of SEATTLE.hotels) expect(zoneIds.has(hotel.zoneId)).toBe(true);
+    expect(new Set(SEATTLE.hotels.map((h) => h.id)).size).toBe(SEATTLE.hotels.length);
+  });
+
+  it('are busiest around morning checkout and scale with size', () => {
+    expect(hotelPickups(400, 3, 7)).toBeGreaterThan(hotelPickups(400, 3, 2) * 4);
+    expect(hotelPickups(800, 3, 7)).toBeCloseTo(hotelPickups(400, 3, 7) * 2, 6);
+    const day = Array.from({ length: 24 }, (_, h) => hotelPickups(400, 3, h)).reduce((s, v) => s + v, 0);
+    expect(day).toBeGreaterThan(100);
+    expect(day).toBeLessThan(200);
+  });
+});
+
+describe('police radar geometry', () => {
+  const tukwila = { lat: 47.459, lng: -122.2585 };
+
+  it('finds the compass direction of a report', () => {
+    expect(compassPoint(bearingDeg(tukwila, { lat: 47.6, lng: -122.2585 }))).toBe('N');
+    expect(compassPoint(bearingDeg(tukwila, { lat: 47.459, lng: -122.0 }))).toBe('E');
+    expect(compassPoint(bearingDeg(tukwila, { lat: 47.3, lng: -122.45 }))).toBe('SW');
+  });
+
+  it('places reports by bearing and distance and drops those out of range', () => {
+    const north = radarPosition(tukwila, { lat: 47.5, lng: -122.2585 }, 10);
+    expect(north).not.toBeNull();
+    expect(north!.x).toBeCloseTo(50, 0);
+    expect(north!.y).toBeLessThan(50);
+    expect(north!.miles).toBeGreaterThan(2.5);
+    expect(north!.miles).toBeLessThan(3.2);
+    expect(radarPosition(tukwila, { lat: 48.5, lng: -122.2585 }, 10)).toBeNull();
+    expect(radarPosition(tukwila, tukwila, 10)).toMatchObject({ x: 50, y: 50 });
   });
 });

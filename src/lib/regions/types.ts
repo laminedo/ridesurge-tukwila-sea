@@ -70,6 +70,6 @@ export interface Region extends RegionInfo {
 }
 
 export function regionInfo(region: Region): RegionInfo {
-  const { id, name, source, timeZone, home, airport, zones, spots } = region;
-  return { id, name, source, timeZone, home, airport, zones, spots };
+  const { id, name, source, timeZone, home, airport, zones, spots, hotels } = region;
+  return { id, name, source, timeZone, home, airport, zones, spots, hotels };
 }

@@ -1,13 +1,14 @@
-import { Grid3x3, Navigation, PlaneLanding, Radar, Ticket, type LucideIcon } from 'lucide-react';
+import { Grid3x3, Navigation, PlaneLanding, Radar, Siren, Ticket, type LucideIcon } from 'lucide-react';
 import type { Tab } from '@/lib/client/stores';
 import { LogoMark, cx } from './ui';
 
 const ITEMS: { tab: Tab; label: string; wideLabel: string; Icon: LucideIcon }[] = [
   { tab: 'radar', label: 'Radar', wideLabel: 'Overview', Icon: Radar },
-  { tab: 'grid', label: 'Heat grid', wideLabel: 'Heat grid', Icon: Grid3x3 },
+  { tab: 'grid', label: 'Grid', wideLabel: 'Heat grid', Icon: Grid3x3 },
   { tab: 'flights', label: 'Flights', wideLabel: 'Flights', Icon: PlaneLanding },
   { tab: 'events', label: 'Events', wideLabel: 'Events', Icon: Ticket },
   { tab: 'stage', label: 'Stage', wideLabel: 'Stage', Icon: Navigation },
+  { tab: 'police', label: 'Police', wideLabel: 'Police', Icon: Siren },
 ];
 
 /** Section navigation: a bottom tab bar on phones, a side rail on tablets and computers. */
@@ -32,7 +33,7 @@ export function BottomNav({
       <div className="hidden h-[57px] items-center justify-center border-b border-line md:flex">
         <LogoMark className="size-9" />
       </div>
-      <ul className="mx-auto grid max-w-[520px] grid-cols-5 md:max-w-none md:grid-cols-1 md:gap-1 md:p-2">
+      <ul className="mx-auto grid max-w-[520px] grid-cols-6 md:max-w-none md:grid-cols-1 md:gap-1 md:p-2">
         {ITEMS.map(({ tab: id, label, wideLabel, Icon }) => {
           const active = id === tab;
           return (

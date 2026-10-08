@@ -3,13 +3,14 @@
 import { useElementWidth } from '@/lib/client/stores';
 import { fmtClock, fmtCount, fmtDuration, fmtMult, fmtRange, fmtShort } from '@/lib/format';
 import { heatColor, heatInk } from '@/lib/heat';
-import type { NavApp } from '@/lib/nav';
+import { searchUrl, type NavApp } from '@/lib/nav';
 import type { Recommendation } from '@/lib/recommend';
 import { MIN } from '@/lib/time';
 import type { Snapshot, ZoneId, ZoneStep } from '@/lib/types';
 import type { View } from '@/lib/view';
 import { CauseIcon } from './BestMove';
 import { useRegion } from './RegionContext';
+import { hotelSpot } from './StagePanel';
 import { Sheet } from './Sheet';
 import { MultBadge, NavLink } from './ui';
 
@@ -192,7 +193,9 @@ function ZoneBody({
   navApp: NavApp;
   onSelect: (step: number) => void;
 }) {
-  const { info, spotsForZone } = useRegion();
+  const { info, spotsForZone, zoneById } = useRegion();
+  const here = zoneById[zone];
+  const hotels = info.hotels.filter((h) => h.zoneId === zone).sort((a, b) => b.rooms - a.rooms);
   const step = steps[sel];
   const peak = steps.reduce((best, s) => (s.mult > best.mult ? s : best), steps[0]);
   const horizonEnd = steps[steps.length - 1].t + 15 * MIN;
@@ -298,6 +301,31 @@ function ZoneBody({
           ))}
         </ul>
       </section>
+
+      {here && (
+        <section>
+          <h3 className="text-[14px] font-semibold">Hotels</h3>
+          <ul className="mt-2 space-y-2">
+            {hotels.slice(0, 5).map((hotel) => (
+              <li key={hotel.id}>
+                <NavLink spot={hotelSpot(hotel, here)} app={navApp} variant="quiet" className="w-full justify-start" detail={`About ${hotel.rooms} rooms`}>
+                  {hotel.name}
+                </NavLink>
+              </li>
+            ))}
+            <li>
+              <a
+                href={searchUrl(navApp, 'hotels', here)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex h-11 items-center justify-center rounded-xl border border-line-2 text-[13px] font-medium"
+              >
+                {hotels.length > 0 ? `See every hotel in ${here.name} on the map` : `Find hotels in ${here.name} on the map`}
+              </a>
+            </li>
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

@@ -391,6 +391,8 @@ export function generateRegion(rows: readonly PlaceRow[], centre: LatLng): Regio
     airport: airport ? { code: airport.code, name: airport.name, zoneId: airport.code } : null,
     zones,
     spots,
+    // No hotel list ships for generated regions; the Hotels screen opens a map search instead.
+    hotels: [],
     profiles,
     airportOrigin,
     venues,
